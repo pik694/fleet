@@ -43,6 +43,46 @@ Your agents are coding. fleet keeps you in control.
 - ⚡ **Act** — **`Space`** jumps to the agent that needs you, **`Enter`** drops you in to approve or steer
 - 🚀 **Ship** — branch, dirty state, and full PR status (CI, reviews, threads) on every repo header
 
+## Differences from upstream
+
+This is a hardened fork of [brizzai/fleet](https://github.com/brizzai/fleet). It behaves the same in day-to-day use, with these changes:
+
+- **No self-updater.** fleet never checks for releases or replaces its own binary; `fleet update` and the `auto_update` setting are gone.
+- **No telemetry.** Nothing is sent to an analytics service, and fleet no longer reads your git name, email or hardware id. Local stats (`i`) stay on your machine as before.
+- **No in-app issue filing.** The `!` report dialog is removed.
+- **No What's New.** fleet does not fetch release notes or read your GitHub token.
+- **Private state files.** Everything fleet writes under `~/.config/fleet` is owner-only.
+- **Trust gate for repo commands.** Workspace shell commands in a repo's `.fleet.json` do not run until you accept them in the TUI or with `fleet trust [path]`, and fleet asks again whenever they change.
+
+The remaining network access is the Anthropic usage API (only with multiple Claude accounts), Linear and Jira (only if you connect them), and the `gh` and `git` CLIs.
+
+### Install with Nix
+
+The fork ships a flake with a pinned Go toolchain:
+
+```nix
+{
+  inputs.fleet.url = "github:pik694/fleet";
+
+  # then either the package…
+  #   inputs.fleet.packages.${system}.default
+  # …or the overlay, which adds pkgs.fleet
+  #   nixpkgs.overlays = [ inputs.fleet.overlays.default ];
+}
+```
+
+The package is self-contained: it bundles `tmux` and `git` and appends them to fleet's `PATH`, so they are used only when you have none of your own — a `tmux` or `git` already on your `PATH` always wins. With the overlay, the bundled tools come from your own `nixpkgs`. To pick them explicitly, or bundle more (for example `gh` for PR badges):
+
+```nix
+pkgs.fleet.override {
+  tmux = pkgs.tmux;          # or null to bundle none
+  git = pkgs.gitMinimal;
+  extraPackages = [ pkgs.gh ];
+}
+```
+
+The install methods below fetch the **upstream** build, which does not include these changes.
+
 ## Install
 
 ### Homebrew (recommended)
