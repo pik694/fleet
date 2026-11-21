@@ -92,3 +92,19 @@ func resolveAgainst(base, path string) string {
 	}
 	return filepath.Join(base, path)
 }
+
+func RepoCommands(repoPath string) ShellConfig {
+	return loadMergedRepoConfig(repoPath).Workspace
+}
+
+func (c ShellConfig) Lines() []string {
+	var lines []string
+	for _, command := range []struct{ name, text string }{
+		{"list", c.List}, {"create", c.Create}, {"destroy", c.Destroy},
+	} {
+		if command.text != "" {
+			lines = append(lines, command.name+": "+command.text)
+		}
+	}
+	return lines
+}

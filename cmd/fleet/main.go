@@ -70,6 +70,8 @@ func main() {
 		runVerb(args[0], args[1:])
 	case "skill":
 		runSkill(args[1:])
+	case "trust":
+		runTrust(args[1:])
 	case "hook-handler":
 		handleHookHandler()
 	case "chrome-host":
@@ -253,6 +255,8 @@ Usage:
   fleet worktree <branch>  Create a git worktree and start a session in it
                            (--base, --path, --agent, --account, --no-session,
                             --prompt, --ticket, --model, --effort)
+  fleet trust [path]  Allow the workspace shell commands a repo's .fleet.json
+                           defines to run (re-asked whenever they change)
   fleet send <session> <message>  Send a message to a running session
                            (--wait: then wait for the turn and print the reply)
 

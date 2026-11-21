@@ -271,6 +271,10 @@ func runWorktree(args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	if !workspace.CommandsTrusted(repoPath) {
+		fmt.Fprintln(os.Stderr, untrustedCommandsNotice(repoPath))
+		os.Exit(1)
+	}
 
 	base := opts.base
 	if base == "" {
