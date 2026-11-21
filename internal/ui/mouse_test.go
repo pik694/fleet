@@ -18,7 +18,7 @@ import (
 // sidebarRows builds n selectable session rows plus the layout rect a frame
 // would have left behind, so the hit-testing tests describe a real screen.
 func mouseTestHome(rows, visibleRows int) *Home {
-	h := &Home{cfg: &config.Config{}, actionLog: NewActionLog(100)}
+	h := &Home{cfg: &config.Config{}}
 	for i := 0; i < rows; i++ {
 		s := session.NewSession("s", "/tmp/mouse-test")
 		h.flatItems = append(h.flatItems, SidebarItem{Session: s})

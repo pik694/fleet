@@ -26,7 +26,7 @@ fmt:
 lint:
 	golangci-lint run ./...
 
-COVERAGE_EXCLUDE := /(ui|cmd|chrome|debuglog|diagnostics)/
+COVERAGE_EXCLUDE := /(ui|cmd|chrome|debuglog)/
 
 coverage:
 	go test -race -coverprofile=coverage.out -covermode=atomic ./...

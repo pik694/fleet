@@ -133,10 +133,9 @@ func (h *Home) recordStatus(id string, from, to session.Status) {
 	h.statsStore.RecordStatus(id, string(from), string(to), time.Now())
 }
 
-// logAction is ActionLog.Add plus the local Stats tee, which reads the action
-// name only through its own fixed table.
-func (h *Home) logAction(action, detail string, success bool) {
-	h.actionLog.Add(action, detail, success)
+// logAction feeds the local Stats tee, which reads the action name only through
+// its own fixed table.
+func (h *Home) logAction(action, _ string, success bool) {
 	if success {
 		if a := statsActionFor(action); a != "" {
 			h.recordStats(a)
@@ -144,7 +143,7 @@ func (h *Home) logAction(action, detail string, success bool) {
 	}
 }
 
-// statsActionFor maps an ActionLog action name onto a stats enum. The table is
+// statsActionFor maps a logAction action name onto a stats enum. The table is
 // fixed on purpose: an unmapped action records nothing, and the detail — where
 // titles and paths live — is never read. Attaches are counted from their own
 // table (RecordAttach), a session start from handleSessionCreateResult and a

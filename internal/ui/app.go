@@ -513,8 +513,6 @@ type Home struct {
 	originKeyMu    sync.Mutex
 	originKeyCache map[string]string
 
-	actionLog *ActionLog
-
 	// Background worker for async status/git/PR updates.
 	statusTrigger         chan struct{} // buffered(1), triggers worker
 	gitTrigger            chan struct{} // buffered(1), triggers gitWorker out of band
@@ -627,7 +625,6 @@ func NewHome(storage *session.StateDB, cfg *config.Config, version string) *Home
 		filterInput:            fi,
 		cfg:                    cfg,
 		version:                version,
-		actionLog:              NewActionLog(100),
 		statusTrigger:          make(chan struct{}, 1),
 		gitTrigger:             make(chan struct{}, 1),
 		priorityStatusUpdates:  make(chan string, 256),
@@ -3228,7 +3225,7 @@ func (h *Home) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		h.logAction("status snapshot", s.Title, true)
 		hb := h.workerHeartbeat()
 		return h, func() tea.Msg {
-			snap := captureStatusSnapshot(s, s.ID, hb, true, true)
+			snap := captureStatusSnapshot(s, s.ID, hb)
 			return statusSnapshotMsg{path: snap.path, err: snap.err}
 		}
 	case "?":

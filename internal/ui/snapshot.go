@@ -35,19 +35,10 @@ type statusSnapshotMsg struct {
 	err  error
 }
 
-// snapshotResult is everything a capture produced: the in-memory payload plus
-// the on-disk dir when one was written. meta is the exact map snapshot.json
-// holds; it embeds the user's verbatim prompt under
-// hook.file_contents.user_prompt, so it stays on this machine.
-//
-// sessionID identifies which session this describes.
+// snapshotResult is where a capture was written, or why it was not.
 type snapshotResult struct {
-	path      string
-	sessionID string
-	meta      map[string]any
-	paneClean string
-	debugTail string
-	err       error
+	path string
+	err  error
 }
 
 // workerHeartbeat carries the status worker's liveness stamps into a snapshot so
@@ -62,26 +53,19 @@ type workerHeartbeat struct {
 	GitCycleStartAt time.Time
 }
 
-// captureStatusSnapshot gathers a session's status evidence and, when persist is
-// set, freezes it to a dir under ~/.config/fleet/snapshots/.
-//
-// `Shift+D`, the only caller, is a deliberate "freeze this for me to read
-// later", so it persists the full dir — including a `runtime.Stack(all=true)`
-// dump, which walks every goroutine. With persist unset the capture stays in
-// memory and touches the filesystem nowhere.
-//
-// copyTranscript additionally gates the frozen copy of the Claude conversation
-// JSONL — 0.5–2.7 MB apiece. It is meaningful only when persist is set.
-func captureStatusSnapshot(s *session.Session, sessionID string, hb workerHeartbeat, persist, copyTranscript bool) snapshotResult {
+// captureStatusSnapshot gathers a session's status evidence and freezes it to a
+// dir under ~/.config/fleet/snapshots/, including the Claude conversation JSONL
+// and a `runtime.Stack(all=true)` dump, which walks every goroutine.
+func captureStatusSnapshot(s *session.Session, sessionID string, hb workerHeartbeat) snapshotResult {
 	ts := s.GetTmuxSession()
 	if ts == nil {
-		return snapshotResult{sessionID: sessionID, err: fmt.Errorf("no tmux session")}
+		return snapshotResult{err: fmt.Errorf("no tmux session")}
 	}
 
 	// 1. Fresh pane capture with ANSI.
 	rawPane, err := ts.CapturePaneFresh()
 	if err != nil {
-		return snapshotResult{sessionID: sessionID, err: fmt.Errorf("pane capture: %w", err)}
+		return snapshotResult{err: fmt.Errorf("pane capture: %w", err)}
 	}
 
 	// 2. Session state snapshot.
@@ -95,18 +79,14 @@ func captureStatusSnapshot(s *session.Session, sessionID string, hb workerHeartb
 	// 4. Filtered debug log tail.
 	debugTail := readFilteredDebugLog(sessionID, 100)
 
-	// 5. Create output directory — only when persisting. An in-memory capture
-	// touches the filesystem nowhere below this point.
+	// 5. Create output directory.
 	now := time.Now()
-	var snapshotDir string
-	if persist {
-		safeTitle := sanitizeForPath(snap.Title)
-		dirName := fmt.Sprintf("%s_%s", now.Format("2006-01-02T15-04-05"), safeTitle)
-		home, _ := os.UserHomeDir()
-		snapshotDir = filepath.Join(home, ".config", "fleet", "snapshots", dirName)
-		if err := os.MkdirAll(snapshotDir, 0700); err != nil {
-			return snapshotResult{sessionID: sessionID, err: fmt.Errorf("mkdir: %w", err)}
-		}
+	safeTitle := sanitizeForPath(snap.Title)
+	dirName := fmt.Sprintf("%s_%s", now.Format("2006-01-02T15-04-05"), safeTitle)
+	home, _ := os.UserHomeDir()
+	snapshotDir := filepath.Join(home, ".config", "fleet", "snapshots", dirName)
+	if err := os.MkdirAll(snapshotDir, 0700); err != nil {
+		return snapshotResult{err: fmt.Errorf("mkdir: %w", err)}
 	}
 
 	// 6. Freeze the Claude conversation transcript + derive its activity signal.
@@ -117,9 +97,7 @@ func captureStatusSnapshot(s *session.Session, sessionID string, hb workerHeartb
 	if jsonlPath := session.ClaudeTranscriptPath(snap.ClaudeSessionID, snap.ProjectPath); jsonlPath != "" {
 		if st := readClaudeLogStat(jsonlPath); st != nil {
 			claudeLog = buildClaudeLogBlock(st, snap.HookUpdatedAt, now)
-			if persist && copyTranscript {
-				_, _ = copyFileStreaming(jsonlPath, filepath.Join(snapshotDir, "claude_session.jsonl"))
-			}
+			_, _ = copyFileStreaming(jsonlPath, filepath.Join(snapshotDir, "claude_session.jsonl"))
 		}
 	}
 
@@ -139,32 +117,24 @@ func captureStatusSnapshot(s *session.Session, sessionID string, hb workerHeartb
 	meta := buildSnapshotJSON(snap, hookFileContent, hookFileInfo, now, claudeLog, claudeStatus, hb)
 
 	// 7. Write files.
-	if persist {
-		if claudeStatusRaw != nil {
-			_ = os.WriteFile(filepath.Join(snapshotDir, "claude_session_status.json"), claudeStatusRaw, 0600)
-		}
-		_ = os.WriteFile(filepath.Join(snapshotDir, "pane_raw.txt"), []byte(rawPane), 0600)
-		_ = os.WriteFile(filepath.Join(snapshotDir, "pane_clean.txt"), []byte(paneClean), 0600)
-		_ = os.WriteFile(filepath.Join(snapshotDir, "debug_tail.txt"), []byte(debugTail), 0600)
-		// All goroutine stacks — pins exactly what the status worker is blocked
-		// on when its heartbeat (worker block in snapshot.json) shows it
-		// stalled. runtime.Stack(all=true) pauses every goroutine to collect,
-		// which is why it is confined to the deliberate `D` capture.
-		writeGoroutineDump(filepath.Join(snapshotDir, "goroutines.txt"))
-
-		jsonData, _ := json.MarshalIndent(meta, "", "  ")
-		_ = os.WriteFile(filepath.Join(snapshotDir, "snapshot.json"), jsonData, 0600)
-
-		debuglog.Logger.Info("status snapshot captured", "dir", snapshotDir, "session", sessionID)
+	if claudeStatusRaw != nil {
+		_ = os.WriteFile(filepath.Join(snapshotDir, "claude_session_status.json"), claudeStatusRaw, 0600)
 	}
+	_ = os.WriteFile(filepath.Join(snapshotDir, "pane_raw.txt"), []byte(rawPane), 0600)
+	_ = os.WriteFile(filepath.Join(snapshotDir, "pane_clean.txt"), []byte(paneClean), 0600)
+	_ = os.WriteFile(filepath.Join(snapshotDir, "debug_tail.txt"), []byte(debugTail), 0600)
+	// All goroutine stacks — pins exactly what the status worker is blocked
+	// on when its heartbeat (worker block in snapshot.json) shows it
+	// stalled. runtime.Stack(all=true) pauses every goroutine to collect,
+	// which is why it is confined to the deliberate `D` capture.
+	writeGoroutineDump(filepath.Join(snapshotDir, "goroutines.txt"))
 
-	return snapshotResult{
-		path:      snapshotDir,
-		sessionID: sessionID,
-		meta:      meta,
-		paneClean: paneClean,
-		debugTail: debugTail,
-	}
+	jsonData, _ := json.MarshalIndent(meta, "", "  ")
+	_ = os.WriteFile(filepath.Join(snapshotDir, "snapshot.json"), jsonData, 0600)
+
+	debuglog.Logger.Info("status snapshot captured", "dir", snapshotDir, "session", sessionID)
+
+	return snapshotResult{path: snapshotDir}
 }
 
 func buildSnapshotJSON(snap session.StatusSnapshot, hookFileRaw []byte, hookFileInfo os.FileInfo, now time.Time, claudeLog, claudeStatus map[string]any, hb workerHeartbeat) map[string]any {
