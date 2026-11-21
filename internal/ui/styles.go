@@ -454,8 +454,7 @@ var (
 // sleep and photograph a half-drawn frame.
 //
 // It lives here rather than on Home because several render entry points are
-// package-level funcs with no Home to read (RenderSidebar, RenderSplash,
-// renderWhatsNewBadge), and a harness driving those directly would see an
+// package-level funcs with no Home to read (RenderSidebar, RenderSplash), and a harness driving those directly would see an
 // unset flag. Deliberately not in ApplyDisplayConfig either: that re-runs on
 // every Appearance change and takes a *config.Config, which would imply this
 // is a user setting. It is not — it is a testing seam.

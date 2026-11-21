@@ -54,7 +54,7 @@ func TestAccountHeaderHiddenForSingleAccount(t *testing.T) {
 
 // The readout drops the names before it disappears, so it hides only when even
 // the nameless form would overflow — at which point drawing it would push the
-// What's New badge out of its corner.
+// recap badge out of its corner.
 func TestAccountHeaderHiddenWhenEvenTheTightestOverflows(t *testing.T) {
 	got := renderAccountUsageHeader(
 		hdrAccounts("a@x.com", "b@x.com"),
@@ -466,7 +466,7 @@ func TestLoggedOutStillShows(t *testing.T) {
 	}
 }
 
-// The readout shares the header row with the What's New badge, so it must stay
+// The readout shares the header row with the recap badge, so it must stay
 // inside the width it is handed.
 func TestAccountHeaderFitsItsWidth(t *testing.T) {
 	for _, style := range []string{config.AccountUsageSplit, config.AccountUsageGrouped} {
@@ -492,7 +492,7 @@ func TestAccountHeaderFitsItsWidth(t *testing.T) {
 // View() passed rightEdge — an x-coordinate — straight in as the width budget, so
 // on a 100-column terminal the strip was allowed ~99 columns, picked its widest
 // form, and was then overlaid at x=25 straight over the breadcrumb, cutting it
-// mid-word. The What's New badge shares the pattern and gets away with it only
+// mid-word. The recap badge shares the pattern and gets away with it only
 // because it is ~14 columns wide.
 func TestReadoutBudgetLeavesRoomForTheHeader(t *testing.T) {
 	const width = 100

@@ -28,9 +28,8 @@ gh pr comment --body "/no-changelog"
 1. **Create** `changelog/unreleased/<short-name>.md` (any unique kebab-case name).
 2. **Frontmatter** with exactly one `type:` — one of: `added`, `improved`,
    `fixed`, `changed`, `removed`, `deprecated`, `security`.
-3. **Optionally** add `highlight: true` to also surface the entry in the in-app
-   **What's New** reel (the animated top-right badge, `W` / `Ctrl+K` →
-   "What's New"). The entry still renders in its normal type section; the flag
+3. **Optionally** add `highlight: true` to feature the entry. The entry still
+   renders in its normal type section; the flag
    *also* copies it into a `### Highlights` block leading the release. Reserve it
    for changes a user would be glad to discover — **most fragments are not
    highlights**.

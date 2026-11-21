@@ -515,8 +515,6 @@ func (h *Home) traceDialogName() string {
 	switch {
 	case h.helpOverlay.IsVisible():
 		return "help"
-	case h.releaseNotes.IsVisible():
-		return "release_notes"
 	case h.recapView.IsVisible():
 		return "stats_recap"
 	case h.statsView.IsVisible():

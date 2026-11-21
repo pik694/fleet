@@ -141,8 +141,7 @@ ensure_sandbox() {
 
     # This config is what keeps the first frame from being a dialog and later
     # frames from changing on their own. The consent and onboarding flags stop
-    # two full-screen takeovers; the release-notes version stops the What's New
-    # shimmer (a ~60ms animation loop); seen_tips stops five tipOnce boxes that
+    # two full-screen takeovers; seen_tips stops five tipOnce boxes that
     # appear and then self-retire after 45s of visible time, changing the frame
     # with no input at all.
     cat > "$SANDBOX/.config/fleet/config.json" <<'JSONEOF'
@@ -150,7 +149,6 @@ ensure_sandbox() {
   "analytics_consent_seen": true,
   "display_onboarding_seen": true,
   "telemetry_mode": "off",
-  "release_notes_seen_version": "9999.0.0",
   "auto_name_sessions": false,
   "tick_interval_sec": 2,
   "session_suspend_mode": "off",

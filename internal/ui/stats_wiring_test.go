@@ -363,3 +363,9 @@ func TestSpaceJumpCountsOnlyRealMoves(t *testing.T) {
 		t.Errorf("space jumps recorded = %d, want 2", n)
 	}
 }
+
+var errTest = errTestType("network unreachable")
+
+type errTestType string
+
+func (e errTestType) Error() string { return string(e) }

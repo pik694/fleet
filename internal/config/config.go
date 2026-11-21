@@ -150,13 +150,6 @@ type Config struct {
 	// skipped). When false, the TUI shows it after the consent prompt.
 	DisplayOnboardingSeen bool `json:"display_onboarding_seen,omitempty"`
 
-	// ReleaseNotesSeenVersion is the newest release version the user has viewed
-	// in the "What's New" reel (normalized, e.g. "2.15.0"). The top-right
-	// What's New badge shows only while a newer highlighted release exists; on a
-	// fresh install it's seeded to the running version so pre-existing releases
-	// don't nag. See GetReleaseNotesSeenVersion / MarkReleaseNotesSeen.
-	ReleaseNotesSeenVersion string `json:"release_notes_seen_version,omitempty"`
-
 	// StatsRecapSeenWeek is the Monday (YYYY-MM-DD, local) of the last weekly
 	// Stats recap the user has opened. The "Your week" badge shows only while
 	// the last full week has a recap and differs from this. Not a Settings row.
@@ -256,12 +249,6 @@ func (c *Config) SetAllowedAccounts(originKey string, emails []string) error {
 	return nil
 }
 
-// GetReleaseNotesSeenVersion returns the newest release version the user has
-// viewed in the What's New reel ("" if never).
-func (c *Config) GetReleaseNotesSeenVersion() string {
-	return c.ReleaseNotesSeenVersion
-}
-
 // GetStatsRecapSeenWeek returns the Monday (YYYY-MM-DD) of the last weekly
 // recap the user opened ("" if never).
 func (c *Config) GetStatsRecapSeenWeek() string {
@@ -277,18 +264,6 @@ func (c *Config) SetStatsRecapSeenWeek(week string) {
 	c.StatsRecapSeenWeek = week
 	if err := c.Save(); err != nil {
 		debuglog.Logger.Error("config: save stats recap seen week", "week", week, "err", err)
-	}
-}
-
-// MarkReleaseNotesSeen records the newest release version the user has viewed
-// and persists it, so the What's New badge clears until a newer release ships.
-func (c *Config) MarkReleaseNotesSeen(version string) {
-	if version == "" || version == c.ReleaseNotesSeenVersion {
-		return
-	}
-	c.ReleaseNotesSeenVersion = version
-	if err := c.Save(); err != nil {
-		debuglog.Logger.Error("config: save release notes seen", "version", version, "err", err)
 	}
 }
 

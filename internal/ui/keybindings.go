@@ -66,7 +66,6 @@ var allKeyBindings = []KeyBinding{
 	{Key: "t", Desc: "My tickets", Section: "global"},
 	{Key: "i", Desc: "Your stats", Section: "global"},
 	{Key: "S", BarKey: "S", BarDesc: "Set", Desc: "Open settings", Section: "global"},
-	{Key: "Shift+W", Desc: "What's New / release notes", Section: "global"},
 	{Key: "X", Desc: "Dismiss on-screen tip", Section: "global"},
 	{Key: "?", BarKey: "?", BarDesc: "Help", Desc: "Toggle help", Section: "global"},
 	{Key: "Ctrl+C", BarKey: "⌃C", BarDesc: "Quit", Desc: "Quit", Section: "global"},

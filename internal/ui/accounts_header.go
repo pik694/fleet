@@ -45,7 +45,7 @@ const (
 // rather than information, and the header row is better spent on nothing.
 //
 // style is one of config.AccountUsageSplit / AccountUsageGrouped /
-// AccountUsageOff. budget is the columns available before the What's New badge;
+// AccountUsageOff. budget is the columns available before the recap badge;
 // nothing wider than it is ever returned.
 func renderAccountUsageHeader(accounts []claudeaccount.Account, usage map[string]claudeaccount.Usage, style string, budget int, now time.Time) string {
 	// Off is honoured here rather than only at the call site. accountChip
@@ -96,7 +96,7 @@ func renderAccountUsageHeader(accounts []claudeaccount.Account, usage map[string
 		}
 	}
 	// Even the nameless form overflows: better nothing than a strip that pushes
-	// the What's New badge off its corner.
+	// the recap badge off its corner.
 	return ""
 }
 
