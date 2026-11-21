@@ -4,17 +4,27 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
+var ErrUntrustedCommands = errors.New("untrusted .fleet.json workspace commands")
+
 func CommandsTrusted(repoPath string) bool {
-	commands := loadMergedRepoConfig(repoPath).Workspace
-	if !commands.any() {
+	return loadMergedRepoConfig(repoPath).Workspace.trustedIn(repoPath)
+}
+
+func (c ShellConfig) trustedIn(repoPath string) bool {
+	if !c.any() {
 		return true
 	}
-	return loadTrusted()[mainCheckout(repoPath)] == commands.fingerprint()
+	return loadTrusted()[mainCheckout(repoPath)] == c.fingerprint()
+}
+
+func (p *ShellProvider) trustedIn(repoPath string) bool {
+	return ShellConfig{List: p.ListCmd, Create: p.CreateCmd, Destroy: p.DestroyCmd}.trustedIn(repoPath)
 }
 
 func TrustCommands(repoPath string) error {

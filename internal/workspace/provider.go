@@ -306,6 +306,9 @@ func (p *ShellProvider) List(repoPath string) ([]WorkspaceInfo, error) {
 	if p.ListCmd == "" {
 		return nil, fmt.Errorf("list command not configured")
 	}
+	if !p.trustedIn(repoPath) {
+		return nil, ErrUntrustedCommands
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -333,6 +336,9 @@ func (p *ShellProvider) List(repoPath string) ([]WorkspaceInfo, error) {
 func (p *ShellProvider) Create(repoPath, name, branch, baseBranch string) (*WorkspaceInfo, error) {
 	if p.CreateCmd == "" {
 		return nil, fmt.Errorf("create command not configured")
+	}
+	if !p.trustedIn(repoPath) {
+		return nil, ErrUntrustedCommands
 	}
 
 	debuglog.Logger.Info("shell workspace create", "repo", repoPath, "name", name, "branch", branch)
@@ -390,6 +396,9 @@ func (p *ShellProvider) Create(repoPath, name, branch, baseBranch string) (*Work
 func (p *ShellProvider) Destroy(repoPath, name string) error {
 	if p.DestroyCmd == "" {
 		return fmt.Errorf("destroy command not configured")
+	}
+	if !p.trustedIn(repoPath) {
+		return ErrUntrustedCommands
 	}
 
 	debuglog.Logger.Info("shell workspace destroy", "repo", repoPath, "name", name)
