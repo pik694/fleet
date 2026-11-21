@@ -10,7 +10,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/config"
 	"github.com/brizzai/fleet/internal/frost"
 	"github.com/brizzai/fleet/internal/session"
@@ -319,7 +318,7 @@ func TestClickOutsideAnOverlayClosesItAndSparesTheSidebar(t *testing.T) {
 	}
 	defer storage.Close()
 
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	h.width, h.height = 120, 40
 	for i := 0; i < 20; i++ {
 		h.flatItems = append(h.flatItems, SidebarItem{Session: session.NewSession("s", "/tmp/mouse-test")})

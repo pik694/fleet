@@ -14,15 +14,6 @@ import (
 	"github.com/brizzai/fleet/internal/debuglog"
 )
 
-// Telemetry modes. Full sends usage events tagged with the user's git
-// name/email; Minimal ("Basic" in the UI) sends the same events anonymously,
-// with no identity and no people profile; Off sends nothing.
-const (
-	TelemetryFull    = "full"
-	TelemetryMinimal = "minimal"
-	TelemetryOff     = "off"
-)
-
 // Session-suspend modes control how aggressively fleet hibernates idle sessions
 // under system memory pressure (see GetSessionSuspendMode). Off disables it;
 // Light is a critical-pressure safety net; Balanced and Aggressive shed idle
@@ -71,16 +62,8 @@ type Config struct {
 	OriginDeleteRemovesWorktrees *bool  `json:"origin_delete_removes_worktrees,omitempty"`
 	EnterMode                    string `json:"enter_mode,omitempty"`       // "attach" or "split"
 	StatusIndicator              string `json:"status_indicator,omitempty"` // "icon" (default) or "bar"
-	// TelemetryMode is the three-way telemetry preference: "full" (usage +
-	// git name/email), "minimal" (the same usage, anonymously), or "off"
-	// (nothing). Read via GetTelemetryMode, which migrates
-	// the legacy Telemetry bool below when this is unset.
-	TelemetryMode string `json:"telemetry_mode,omitempty"`
-	// Telemetry is the legacy on/off flag, kept only for migration — new writes
-	// go to TelemetryMode. See GetTelemetryMode.
-	Telemetry    *bool  `json:"telemetry,omitempty"`
-	DefaultAgent string `json:"default_agent,omitempty"` // "claude" or "codex"
-	DrawerHeight int    `json:"drawer_height,omitempty"` // terminal-drawer body rows (default 12)
+	DefaultAgent                 string `json:"default_agent,omitempty"`    // "claude" or "codex"
+	DrawerHeight                 int    `json:"drawer_height,omitempty"`    // terminal-drawer body rows (default 12)
 	// SessionSuspendMode controls auto-hibernation of idle sessions under memory
 	// pressure: "off", "light" (default), "balanced", or "aggressive". Read via
 	// GetSessionSuspendMode. See internal/ui suspend sweep.
@@ -140,14 +123,9 @@ type Config struct {
 	ChevronStyle       string `json:"chevron_style,omitempty"`        // "triangle" (default ▾▸) or "plusminus" (−+)
 	SidebarDensity     string `json:"sidebar_density,omitempty"`      // "normal" (default) or "compact" (no inter-group gap)
 
-	// AnalyticsConsentSeen is true once the user has been shown the
-	// first-launch consent prompt and answered it (either way). When false,
-	// the TUI shows the prompt before initializing analytics.
-	AnalyticsConsentSeen bool `json:"analytics_consent_seen,omitempty"`
-
 	// DisplayOnboardingSeen is true once the user has been shown the
 	// first-launch theme/onboarding screen (whether they picked a theme or
-	// skipped). When false, the TUI shows it after the consent prompt.
+	// skipped). When false, the TUI shows it on launch.
 	DisplayOnboardingSeen bool `json:"display_onboarding_seen,omitempty"`
 
 	// StatsRecapSeenWeek is the Monday (YYYY-MM-DD, local) of the last weekly
@@ -169,8 +147,7 @@ type Config struct {
 
 	// loadedFromDisk records whether Load read an existing config file. It is
 	// unexported (never serialized) and powers IsFirstRun: a brand-new install
-	// has no config.json, so this is the one signal that doesn't depend on the
-	// telemetry/consent path.
+	// has no config.json, so this is the signal for it.
 	loadedFromDisk bool
 
 	// unknownKeys preserves any top-level JSON keys present on disk that this
@@ -183,7 +160,7 @@ type Config struct {
 
 // IsFirstRun reports whether this is a genuinely fresh install — no config file
 // existed when Load ran. Used to decide whether to show first-run experiences
-// (e.g. theme onboarding) on launches that skip the consent prompt.
+// (e.g. theme onboarding).
 func (c *Config) IsFirstRun() bool { return !c.loadedFromDisk }
 
 // GetDefaultAgent returns the default coding agent for new sessions (one of
@@ -630,42 +607,6 @@ func (c *Config) GetSidebarDensity() string {
 	return "normal"
 }
 
-// isValidTelemetryMode reports whether mode is one of the documented telemetry
-// modes. An unrecognized value (typo, corruption, or a mode written by a newer
-// build) must not be treated as explicit consent.
-func isValidTelemetryMode(mode string) bool {
-	switch mode {
-	case TelemetryFull, TelemetryMinimal, TelemetryOff:
-		return true
-	default:
-		return false
-	}
-}
-
-// GetTelemetryMode returns the telemetry mode: "full", "minimal", or "off".
-// Precedence: a valid explicit TelemetryMode wins; otherwise the legacy
-// Telemetry bool is migrated (true→full, false→minimal — a previously-declined
-// user stays anonymous); otherwise the default is "full".
-// A non-empty but unrecognized mode falls back to "minimal", never "full", so a
-// corrupt/typo value can't silently grant identity-tagged telemetry. A
-// brand-new install is shown the consent prompt before anything is sent, so
-// these defaults only govern pre-answer and edge paths.
-func (c *Config) GetTelemetryMode() string {
-	if isValidTelemetryMode(c.TelemetryMode) {
-		return c.TelemetryMode
-	}
-	if c.TelemetryMode != "" && c.Telemetry == nil {
-		return TelemetryMinimal
-	}
-	if c.Telemetry != nil {
-		if *c.Telemetry {
-			return TelemetryFull
-		}
-		return TelemetryMinimal
-	}
-	return TelemetryFull
-}
-
 // isValidSuspendMode reports whether mode is a documented session-suspend mode.
 func isValidSuspendMode(mode string) bool {
 	switch mode {
@@ -684,14 +625,6 @@ func (c *Config) GetSessionSuspendMode() string {
 		return c.SessionSuspendMode
 	}
 	return SuspendLight
-}
-
-// TelemetryConfigured reports whether the user already has an explicit
-// telemetry preference on disk (a valid mode field or the legacy bool). Used
-// to skip the first-launch consent prompt for upgrading users. An invalid mode
-// value does not count as configured, so consent still applies.
-func (c *Config) TelemetryConfigured() bool {
-	return isValidTelemetryMode(c.TelemetryMode) || c.Telemetry != nil
 }
 
 // GetEditor returns the configured editor, falling back to $EDITOR then "code".

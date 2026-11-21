@@ -8,8 +8,8 @@ import (
 	"github.com/brizzai/fleet/internal/ticket"
 )
 
-// kind is Linear's stable id: the config key, the analytics property, and the
-// prefix of its keychain service name. Never shown to a user — Name is.
+// kind is Linear's stable id: the config key and the prefix of its
+// keychain service name. Never shown to a user — Name is.
 const kind = "linear"
 
 // Provider is Linear as a ticket.Provider.

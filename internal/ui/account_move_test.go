@@ -10,7 +10,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brizzai/fleet/internal/agent"
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/claudeaccount"
 	"github.com/brizzai/fleet/internal/config"
 	"github.com/brizzai/fleet/internal/git"
@@ -27,7 +26,7 @@ func moveHome(t *testing.T, usage map[string]claudeaccount.Usage) (*Home, *sessi
 	}
 	t.Cleanup(func() { storage.Close() })
 
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	h.width, h.height = 120, 40
 	h.accounts = &claudeaccount.Store{}
 	h.accounts.Upsert(claudeaccount.Account{Email: "first@x.com", ConfigDir: "/d/1"})

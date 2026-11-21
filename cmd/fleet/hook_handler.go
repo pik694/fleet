@@ -90,9 +90,9 @@ func isCopilotSubagent(sessionID string) bool {
 	return os.IsNotExist(err)
 }
 
-// sanitizeExitReason keeps a reason only when it is a short snake_case enum: it
-// reaches analytics as exit_reason, and must be non-empty, since an empty one
-// would no longer mark the hook as a SessionEnd.
+// sanitizeExitReason keeps a reason only when it is a short snake_case enum. It
+// must be non-empty, since an empty one would no longer mark the hook as a
+// SessionEnd.
 func sanitizeExitReason(r string) string {
 	if r == "" || len(r) > 32 {
 		return "other"

@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/config"
 	"github.com/brizzai/fleet/internal/session"
 )
@@ -19,7 +18,7 @@ func adoptTestHome(t *testing.T) *Home {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { storage.Close() })
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	h.width, h.height = 120, 40
 	return h
 }
@@ -555,8 +554,7 @@ func TestUpdateAndPersistStatusAdoptsExternalSuspend(t *testing.T) {
 		t.Errorf("row status = %s — the worker overwrote the CLI's suspend", got.Status)
 	}
 	// The row is checked before UpdateStatus, which would otherwise have read
-	// the missing tmux session as a crash: a dump on disk, a session_errored
-	// event. The dump is written on a goroutine, so give it a moment to appear.
+	// the missing tmux session as a crash: a dump on disk. The dump is written on a goroutine, so give it a moment to appear.
 	time.Sleep(200 * time.Millisecond)
 	if _, err := os.Stat(filepath.Join(home, ".config", "fleet", "crashes")); err == nil {
 		t.Error("a deliberate suspend was recorded as a crash")

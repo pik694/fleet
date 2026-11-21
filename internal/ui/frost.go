@@ -6,7 +6,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/debuglog"
 	"github.com/brizzai/fleet/internal/frost"
 )
@@ -65,7 +64,6 @@ func (h *Home) startFrost() tea.Cmd {
 	}
 	debuglog.Logger.Info("frost: start", "size", h.width*h.height)
 	h.logAction("frost", "start", true)
-	analytics.Track(analytics.EventFrostMode, nil)
 	screen := frost.Freeze(h.composeScreen(), h.width, h.height)
 	h.frost = frost.New(screen, uint64(time.Now().UnixNano()))
 	return frostTickCmd()

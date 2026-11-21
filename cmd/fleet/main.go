@@ -10,7 +10,6 @@ import (
 	"text/tabwriter"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/config"
 	"github.com/brizzai/fleet/internal/debuglog"
 	"github.com/brizzai/fleet/internal/migration"
@@ -113,14 +112,8 @@ func runTUI() {
 
 	if err := tmux.IsTmuxAvailable(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		reportStartupFailure(cfg, "tmux_missing")
 		os.Exit(1)
 	}
-
-	// Analytics is initialized inside the TUI, after the first-launch
-	// consent prompt is answered. We still defer Shutdown unconditionally
-	// because Shutdown is a no-op when Init was never called.
-	defer analytics.Shutdown()
 
 	storage, err := session.Open(session.DefaultDBPath())
 	if err != nil {
@@ -129,12 +122,7 @@ func runTUI() {
 	}
 	defer storage.Close()
 
-	// Resolve per-install identity (device hash, git name/email, OS version)
-	// here so the Bubble Tea Update() loop never has to wait on git/ioreg/
-	// sw_vers. analytics.Init then becomes pure in-memory plumbing.
-	identity := analytics.DiscoverIdentity()
-
-	model := ui.NewHome(storage, cfg, version, identity)
+	model := ui.NewHome(storage, cfg, version)
 	// v2: alt-screen and mouse mode are declared on the View each frame
 	// (see Home.chrome), not as program options.
 	p := tea.NewProgram(model)
@@ -176,26 +164,6 @@ func runTUI() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-// reportStartupFailure sends startup_failed for a launch that exits before the
-// TUI starts, and so before the TUI's own analytics.Init — without it the exit
-// is invisible. Only for a user who has already answered the consent prompt,
-// the same gate the TUI applies: a first-ever launch has no answer yet, and
-// GetTelemetryMode's "full" default is not one.
-func reportStartupFailure(cfg *config.Config, reason string) {
-	if !cfg.AnalyticsConsentSeen && !cfg.TelemetryConfigured() {
-		return
-	}
-	mode := cfg.GetTelemetryMode()
-	if mode == config.TelemetryOff || analytics.IsOptedOutByEnv() {
-		return
-	}
-	analytics.Init(mode, version, analytics.DiscoverIdentity())
-	analytics.Track(analytics.EventStartupFailed, map[string]interface{}{"reason": reason})
-	// Bounded by shutdownTimeout, so an unreachable network can't hold the error
-	// exit open.
-	analytics.Shutdown()
 }
 
 func runList() {

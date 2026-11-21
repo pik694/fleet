@@ -93,8 +93,8 @@ func TestNormalizeCopilotEvent(t *testing.T) {
 	}
 }
 
-// The reason is what marks a Copilot SessionEnd (it releases the owner), and it
-// reaches analytics as exit_reason, so it must be a non-empty enum.
+// The reason is what marks a Copilot SessionEnd (it releases the owner), so it
+// must be a non-empty enum.
 func TestCopilotSessionEndReasonIsAnEnum(t *testing.T) {
 	for in, want := range map[string]string{
 		"user_exit":             "user_exit",

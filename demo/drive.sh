@@ -65,8 +65,6 @@ fleet_env() {
     echo "-e COPILOT_HOME=$SANDBOX/.copilot"
     echo "-e PATH=$SANDBOX/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     echo "-e FLEET_DEMO_PREFIX=$REPOS"
-    echo "-e FLEET_TELEMETRY_DISABLED=1"
-    echo "-e DO_NOT_TRACK=1"
     echo "-e FLEET_FREEZE_ANIM=1"
     echo "-e TERM=xterm-256color"
     echo "-e COLORTERM=truecolor"
@@ -140,15 +138,13 @@ ensure_sandbox() {
     touch "$SANDBOX/.config/fleet/.migrated-from-brizz-code"
 
     # This config is what keeps the first frame from being a dialog and later
-    # frames from changing on their own. The consent and onboarding flags stop
-    # two full-screen takeovers; seen_tips stops five tipOnce boxes that
+    # frames from changing on their own. The onboarding flag stops a
+    # full-screen takeover; seen_tips stops five tipOnce boxes that
     # appear and then self-retire after 45s of visible time, changing the frame
     # with no input at all.
     cat > "$SANDBOX/.config/fleet/config.json" <<'JSONEOF'
 {
-  "analytics_consent_seen": true,
   "display_onboarding_seen": true,
-  "telemetry_mode": "off",
   "auto_name_sessions": false,
   "tick_interval_sec": 2,
   "session_suspend_mode": "off",

@@ -13,9 +13,8 @@ import (
 	"github.com/brizzai/fleet/internal/editor"
 )
 
-// settingsClosedMsg is sent when the settings dialog closes. theme is the
-// committed theme when it differs from the one Settings opened with, else "".
-type settingsClosedMsg struct{ theme string }
+// settingsClosedMsg is sent when the settings dialog closes.
+type settingsClosedMsg struct{}
 
 var (
 	// Only the editors this machine can actually launch — a preset the user picks
@@ -32,7 +31,6 @@ var (
 	densitySet           = []string{"normal", "compact"}
 	enterModeSet         = []string{"attach", "split"}
 	accountStrategySet   = claudeaccount.Strategies
-	telemetryModeSet     = []string{config.TelemetryFull, config.TelemetryMinimal, config.TelemetryOff}
 	suspendModeSet       = []string{config.SuspendOff, config.SuspendLight, config.SuspendBalanced, config.SuspendAggressive}
 	accountUsageStyleSet = []string{config.AccountUsageSplit, config.AccountUsageGrouped, config.AccountUsageOff}
 )
@@ -71,7 +69,6 @@ type SettingsDialog struct {
 	width          int
 	height         int
 	cfg            *config.Config
-	origTheme      string
 	categories     []settingsCategory
 	detailWByCat   []int // natural detail-column width per category (cached; depends only on static labels/presets)
 	categoryCursor int
@@ -94,7 +91,6 @@ func NewSettingsDialog(cfg *config.Config) *SettingsDialog {
 
 func (d *SettingsDialog) Show() {
 	d.visible = true
-	d.origTheme = d.cfg.Theme
 	d.categoryCursor = 0
 	d.focus = focusCategories
 	d.rowCursor = d.firstSelectableRow(0)
@@ -229,11 +225,7 @@ func (d *SettingsDialog) Update(msg tea.Msg) (*SettingsDialog, tea.Cmd) {
 	case "esc", "q":
 		_ = d.cfg.Save()
 		d.Hide()
-		var theme string
-		if d.themeChanged() {
-			theme = d.cfg.Theme
-		}
-		return d, func() tea.Msg { return settingsClosedMsg{theme: theme} }
+		return d, func() tea.Msg { return settingsClosedMsg{} }
 
 	case "tab", "shift+tab":
 		if d.focus == focusCategories {
@@ -581,8 +573,7 @@ func buildSettingsCategories() []settingsCategory {
 				valueW: func() int { return maxStrW([]string{"Off", "Split", "Grouped"}) },
 				cycle: func(d *SettingsDialog, dir int) {
 					d.cfg.AccountUsageStyle = cycleString(d.cfg.GetAccountUsageStyle(), accountUsageStyleSet, dir)
-					// Supersede the legacy bool, the way the Telemetry row does.
-					// The style already wins on read, but leaving
+					// Supersede the legacy bool. The style already wins on read, but leaving
 					// show_account_usage:false beside account_usage_style:"split"
 					// on disk is a contradiction in a file that gets pasted into
 					// bug reports.
@@ -695,23 +686,6 @@ func buildSettingsCategories() []settingsCategory {
 				},
 			},
 			{
-				label: "Telemetry",
-				value: func(c *config.Config) string {
-					switch c.GetTelemetryMode() {
-					case config.TelemetryMinimal:
-						return "Basic (anon)"
-					case config.TelemetryOff:
-						return "Off"
-					default:
-						return "Full"
-					}
-				},
-				cycle: func(d *SettingsDialog, dir int) {
-					d.cfg.TelemetryMode = cycleString(d.cfg.GetTelemetryMode(), telemetryModeSet, dir)
-					d.cfg.Telemetry = nil // supersede any legacy bool
-				},
-			},
-			{
 				label: "Default agent",
 				value: func(c *config.Config) string {
 					return agent.Parse(c.GetDefaultAgent()).DisplayName()
@@ -789,13 +763,6 @@ func cycleTheme(d *SettingsDialog, dir int) {
 	}
 	d.cfg.Theme = names[(idx+dir+len(names))%len(names)]
 	ApplyPalette(PaletteByName(d.cfg.Theme))
-}
-
-// themeChanged reports whether the effective theme differs from the one Settings
-// opened on. PaletteByName resolves an unset theme to the default, as cycleTheme
-// does, so cycling a full lap back to the default is not a change.
-func (d *SettingsDialog) themeChanged() bool {
-	return PaletteByName(d.cfg.Theme).Name != PaletteByName(d.origTheme).Name
 }
 
 // cycleString returns the preset reached by stepping dir from cur (wrapping).

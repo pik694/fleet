@@ -8,7 +8,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/config"
 	"github.com/brizzai/fleet/internal/git"
 	"github.com/brizzai/fleet/internal/linear"
@@ -23,7 +22,7 @@ func ticketHome(t *testing.T) *Home {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { storage.Close() })
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	h.width, h.height = 120, 40
 	return h
 }

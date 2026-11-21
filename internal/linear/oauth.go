@@ -34,8 +34,7 @@ const oauthScopes = "read,write"
 
 // clientID identifies fleet's OAuth application.
 //
-// Public by design and safe to embed, the same way the PostHog project key is:
-// with PKCE there is no client secret, and the registered redirect URIs are what
+// Public by design and safe to embed: with PKCE there is no client secret, and the registered redirect URIs are what
 // actually stop someone else using it. Overridable so a fork or a self-hosted
 // setup can point at its own registration.
 var clientID = defaultClientID

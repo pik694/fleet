@@ -13,7 +13,7 @@ import (
 // ignores. Each provider package exports its own connect surface, used by its
 // own dialog.
 type Provider interface {
-	// Kind is the stable id used in config, analytics, and the credential's
+	// Kind is the stable id used in config and the credential's
 	// keychain service name: "linear" / "jira". Never shown to a user.
 	Kind() string
 

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/config"
 	"github.com/brizzai/fleet/internal/git"
 	"github.com/brizzai/fleet/internal/session"
@@ -351,8 +350,8 @@ func TestSnoozeDialogFocusDecidesEnter(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("enter on a preset produced no command")
 	}
-	if got := cmd().(snoozeSelectedMsg).durationID; got != SnoozeDurations[0].ID {
-		t.Errorf("durationID = %q, want the highlighted preset %q", got, SnoozeDurations[0].ID)
+	if got := time.Until(cmd().(snoozeSelectedMsg).until); got < 29*time.Minute || got > 31*time.Minute {
+		t.Errorf("resolved to %v away, want the highlighted preset's ~30m", got)
 	}
 
 	// Now with the input focused, the same text wins.
@@ -367,9 +366,6 @@ func TestSnoozeDialogFocusDecidesEnter(t *testing.T) {
 	msg, ok := cmd().(snoozeSelectedMsg)
 	if !ok {
 		t.Fatalf("got %T, want snoozeSelectedMsg", cmd())
-	}
-	if msg.durationID != "custom" {
-		t.Errorf("durationID = %q, want %q", msg.durationID, "custom")
 	}
 	if got := time.Until(msg.until); got < 47*time.Hour || got > 49*time.Hour {
 		t.Errorf("custom 2d resolved to %v away, want ~48h", got)
@@ -412,8 +408,8 @@ func TestSnoozeDialogPresetPath(t *testing.T) {
 		t.Fatal("enter on a preset produced no command")
 	}
 	msg := cmd().(snoozeSelectedMsg)
-	if msg.durationID != SnoozeDurations[1].ID {
-		t.Errorf("durationID = %q, want %q", msg.durationID, SnoozeDurations[1].ID)
+	if got := time.Until(msg.until); got < 59*time.Minute || got > 61*time.Minute {
+		t.Errorf("resolved to %v away, want the highlighted preset's ~1h", got)
 	}
 }
 
@@ -483,7 +479,7 @@ func TestSnoozeKeyOpensDurationPicker(t *testing.T) {
 	}
 	t.Cleanup(func() { storage.Close() })
 
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	h.width, h.height = 120, 40
 
 	s := session.NewSession("snoozable", "/tmp/snz-e2e")
@@ -556,7 +552,7 @@ func TestGroupSnoozeCollapsesAndWakeExpands(t *testing.T) {
 	}
 	t.Cleanup(func() { storage.Close() })
 
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	h.width, h.height = 120, 40
 
 	const repo = "/tmp/snz-group"
@@ -606,7 +602,7 @@ func TestSnoozeMutedCoversCollapsedGroups(t *testing.T) {
 	}
 	t.Cleanup(func() { storage.Close() })
 
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	const repo = "/tmp/snz-collapsed"
 	const origin = "github.com/acme/collapsed"
 	h.setGitInfo(map[string]*git.RepoInfo{repo: {OriginKey: origin}})
@@ -642,7 +638,7 @@ func TestForgetSnoozeClearsGroupState(t *testing.T) {
 	}
 	t.Cleanup(func() { storage.Close() })
 
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	const repo = "/tmp/snz-forget"
 	const origin = "github.com/acme/forget"
 	h.setGitInfo(map[string]*git.RepoInfo{repo: {OriginKey: origin}})
@@ -699,7 +695,7 @@ func TestMaybeWakeSnoozedExpires(t *testing.T) {
 	}
 	t.Cleanup(func() { storage.Close() })
 
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	now := time.Now()
 
 	lapsed := session.NewSession("lapsed", "/tmp/snz-w")
@@ -750,7 +746,7 @@ func TestExpiredSnoozeFlagsIdleSessionUnread(t *testing.T) {
 	}
 	t.Cleanup(func() { storage.Close() })
 
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	now := time.Now()
 
 	idle := session.NewSession("idle", "/tmp/snz-u")

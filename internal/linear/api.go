@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/debuglog"
 	"github.com/brizzai/fleet/internal/ticket"
 )
@@ -31,31 +30,6 @@ var getenv = os.Getenv
 // downloads. The per-call context does the real bounding; the client timeout is
 // a backstop for a request that never reaches the deadline machinery.
 var httpClient = &http.Client{Timeout: 90 * time.Second}
-
-// failures are one-shot rather than polled, so this throttle isn't stopping a
-// flood — it stops a user who creates ten worktrees against a broken credential
-// from emitting ten identical events. reason is a low-cardinality label, never
-// an issue identifier or a path.
-const failTrackInterval = 10 * time.Minute
-
-var (
-	failMu   sync.Mutex
-	failLast time.Time
-)
-
-func trackFailure(reason string) {
-	failMu.Lock()
-	if !failLast.IsZero() && time.Since(failLast) < failTrackInterval {
-		failMu.Unlock()
-		return
-	}
-	failLast = time.Now()
-	failMu.Unlock()
-	analytics.Track(analytics.EventTicketCommandFailure, map[string]any{
-		"provider": kind,
-		"reason":   reason,
-	})
-}
 
 type gqlRequest struct {
 	Query     string         `json:"query"`
@@ -140,10 +114,8 @@ func executeWith(ctx context.Context, cred Credential, timeout time.Duration, qu
 		// a cancelled request wraps its own type. Wrapped with %w so callers
 		// can errors.Is it.
 		if ctx.Err() == context.DeadlineExceeded {
-			trackFailure("timeout")
 			return fmt.Errorf("linear: request timed out: %w", ctx.Err())
 		}
-		trackFailure("transport")
 		return fmt.Errorf("linear: %w", err)
 	}
 	defer resp.Body.Close()
@@ -161,7 +133,6 @@ func executeWith(ctx context.Context, cred Credential, timeout time.Duration, qu
 	if err := classifyGraphQL(resp.StatusCode, env.Errors); err != nil {
 		if err != ticket.ErrNotFound {
 			debuglog.Logger.Debug("linear: request failed", "status", resp.StatusCode, "error", err)
-			trackFailure(reasonFor(err))
 		}
 		return err
 	}
@@ -169,20 +140,6 @@ func executeWith(ctx context.Context, cred Credential, timeout time.Duration, qu
 		return nil
 	}
 	return json.Unmarshal(env.Data, out)
-}
-
-// reasonFor collapses an error to a low-cardinality analytics label. Never the
-// error string: those can carry an issue identifier.
-func reasonFor(err error) string {
-	switch err {
-	case ticket.ErrNotAuthenticated:
-		return "not_authenticated"
-	case ticket.ErrNotConnected:
-		return "not_connected"
-	case ticket.ErrNotFound:
-		return "not_found"
-	}
-	return "request_failed"
 }
 
 func truncate(s string, n int) string {
@@ -483,11 +440,9 @@ func moveToStarted(ctx context.Context, issue *issueFull) (string, error) {
 	}
 	vars := map[string]any{"id": issue.Identifier, "stateId": state.ID}
 	if err := execute(ctx, ticket.StateTimeout, updateStateMutation, vars, &out); err != nil {
-		trackFailure("state_write_failed")
 		return "", err
 	}
 	if !out.IssueUpdate.Success {
-		trackFailure("state_write_failed")
 		return "", fmt.Errorf("linear: issue update was refused")
 	}
 	if u := out.IssueUpdate.Issue; u != nil && u.State != nil {

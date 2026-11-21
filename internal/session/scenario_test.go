@@ -19,32 +19,17 @@ import (
 // healthy session), and dead is whether the process inside it exited. "tmux up,
 // pane dead" is the only combination that yields an exit code.
 type mockPane struct {
-	content       string
-	dead          bool
-	tmuxGone      bool   // tmux session absent → IsAlive() false, nothing to ask
-	exitStatus    string // tmux #{pane_dead_status} once dead
-	exitSignal    string // tmux #{pane_dead_signal} once dead
-	deadInfoFails bool   // tmux is up but won't answer list-panes → ok=false
-	deadInfoCalls int    // PaneDeadInfo shell-outs made; counted, since not asking is the point
-	activityUnix  int64  // simulated tmux window_activity timestamp
-	hasActivity   bool   // false → GetActivity reports unknown
+	content      string
+	dead         bool
+	tmuxGone     bool  // tmux session absent → IsAlive() false, nothing to ask
+	activityUnix int64 // simulated tmux window_activity timestamp
+	hasActivity  bool  // false → GetActivity reports unknown
 }
 
 func (m *mockPane) CapturePane() (string, error) { return m.content, nil }
 func (m *mockPane) Exists() bool                 { return !m.tmuxGone }
 func (m *mockPane) IsPaneDead() bool             { return m.dead }
 func (m *mockPane) GetActivity() (int64, bool)   { return m.activityUnix, m.hasActivity }
-
-// PaneDeadInfo answers whenever tmux is reachable and willing. A gone session has
-// no pane to report on, and a live one can still fail to answer — the callers
-// treat both as "nothing to report", never as a clean exit.
-func (m *mockPane) PaneDeadInfo() (bool, string, string, bool) {
-	m.deadInfoCalls++
-	if m.tmuxGone || m.deadInfoFails {
-		return false, "", "", false
-	}
-	return m.dead, m.exitStatus, m.exitSignal, true
-}
 
 // --- Scenario types ---
 

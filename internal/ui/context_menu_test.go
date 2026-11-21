@@ -11,7 +11,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/brizzai/fleet/internal/agent"
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/config"
 	"github.com/brizzai/fleet/internal/git"
 	"github.com/brizzai/fleet/internal/github"
@@ -514,7 +513,7 @@ func TestContextMenuEndToEndOpensAndDispatches(t *testing.T) {
 	}
 	t.Cleanup(func() { storage.Close() })
 
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	h.width, h.height = 120, 40
 
 	s := session.NewSession("ctx", "/tmp/cm-e2e")
@@ -569,7 +568,7 @@ func TestContextMenuDispatchFollowsTargetNotCursor(t *testing.T) {
 	}
 	t.Cleanup(func() { storage.Close() })
 
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	h.width, h.height = 120, 40
 
 	a := session.NewSession("alpha", "/tmp/cm-e2e")
@@ -625,7 +624,7 @@ func TestContextMenuRefusesWhenTargetIsGone(t *testing.T) {
 	}
 	t.Cleanup(func() { storage.Close() })
 
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	h.width, h.height = 120, 40
 
 	a := session.NewSession("alpha", "/tmp/cm-e2e")
@@ -659,7 +658,7 @@ func TestContextMenuKeyIsNoOpOnEmptyRow(t *testing.T) {
 	}
 	t.Cleanup(func() { storage.Close() })
 
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	h.width, h.height = 120, 40
 	h.flatItems = []SidebarItem{{IsSpacer: true}}
 	h.cursor = 0

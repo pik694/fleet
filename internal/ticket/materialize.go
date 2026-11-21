@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/debuglog"
 	"github.com/brizzai/fleet/internal/git"
 )
@@ -202,12 +201,6 @@ func Materialize(ctx context.Context, p Provider, o Opts) (Result, error) {
 		}
 	}
 	writeMeta(dir, m)
-
-	analytics.Track(analytics.EventTicketMaterialized, map[string]any{
-		"provider": p.Kind(),
-		"images":   images,
-		"dropped":  dropped,
-	})
 	return res, nil
 }
 

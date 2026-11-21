@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/config"
 	"github.com/brizzai/fleet/internal/git"
 	"github.com/brizzai/fleet/internal/github"
@@ -34,7 +33,7 @@ func TestHomeInitializes(t *testing.T) {
 	}
 
 	// Should not panic.
-	home := NewHome(storage, cfg, "test", analytics.Identity{})
+	home := NewHome(storage, cfg, "test")
 	if home == nil {
 		t.Fatal("NewHome returned nil")
 		return
@@ -68,7 +67,7 @@ func TestViewGitInfoCacheRace(t *testing.T) {
 	}
 	defer storage.Close()
 
-	home := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	home := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	home.width = 120
 	home.height = 40
 
@@ -120,7 +119,7 @@ func TestRefreshAllGitAndPR_AllReposPopulated(t *testing.T) {
 	}
 	defer storage.Close()
 
-	home := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	home := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 
 	// Three throwaway repo paths — they don't need to be real git repos for
 	// the cache-write contract; RefreshGitInfo returns a non-nil RepoInfo
@@ -224,7 +223,7 @@ func TestRepoTTLFor_HotnessWindow(t *testing.T) {
 	}
 	defer storage.Close()
 
-	home := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	home := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	now := time.Now()
 	home.repoLastHotAt["/repo/hot-recent"] = now.Add(-30 * time.Second)
 	home.repoLastHotAt["/repo/hot-edge"] = now.Add(-14 * time.Minute) // still inside 15min window
@@ -343,7 +342,7 @@ func TestBootstrapRepoSet_UnionOfSessionsAndPinned(t *testing.T) {
 	}
 	defer storage.Close()
 
-	home := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	home := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	home.sessions = []*session.Session{
 		session.NewSession("s1", "/tmp/repoA"),
 		session.NewSession("s2", "/tmp/repoA/subdir"),

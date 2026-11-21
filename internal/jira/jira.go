@@ -23,8 +23,8 @@ import (
 	"github.com/brizzai/fleet/internal/workspace"
 )
 
-// kind is Jira's stable id: the config key, the analytics property, and the
-// prefix of its keychain service name. Never shown to a user — Name is.
+// kind is Jira's stable id: the config key and the prefix of its
+// keychain service name. Never shown to a user — Name is.
 const kind = "jira"
 
 // ProjectKeys returns the Jira project keys this repo tracks, or nil if it

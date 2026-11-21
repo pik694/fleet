@@ -91,52 +91,6 @@ func TestIsCopyClaudeSettingsEnabled(t *testing.T) {
 	})
 }
 
-func TestGetTelemetryMode(t *testing.T) {
-	ptr := func(b bool) *bool { return &b }
-
-	cases := []struct {
-		name string
-		cfg  *Config
-		want string
-	}{
-		{"unset defaults to full", &Config{}, TelemetryFull},
-		{"explicit full", &Config{TelemetryMode: TelemetryFull}, TelemetryFull},
-		{"explicit minimal", &Config{TelemetryMode: TelemetryMinimal}, TelemetryMinimal},
-		{"explicit off", &Config{TelemetryMode: TelemetryOff}, TelemetryOff},
-		{"unrecognized mode falls back to minimal (conservative)", &Config{TelemetryMode: "bogus"}, TelemetryMinimal},
-		{"legacy true migrates to full", &Config{Telemetry: ptr(true)}, TelemetryFull},
-		{"legacy false (old decline) migrates to minimal", &Config{Telemetry: ptr(false)}, TelemetryMinimal},
-		{"explicit mode overrides legacy bool", &Config{TelemetryMode: TelemetryOff, Telemetry: ptr(true)}, TelemetryOff},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := tc.cfg.GetTelemetryMode(); got != tc.want {
-				t.Errorf("GetTelemetryMode() = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestTelemetryConfigured(t *testing.T) {
-	ptr := func(b bool) *bool { return &b }
-
-	if (&Config{}).TelemetryConfigured() {
-		t.Error("empty config should report telemetry not configured")
-	}
-	if !(&Config{TelemetryMode: TelemetryMinimal}).TelemetryConfigured() {
-		t.Error("explicit mode should report configured")
-	}
-	if !(&Config{Telemetry: ptr(false)}).TelemetryConfigured() {
-		t.Error("legacy bool should report configured")
-	}
-	if (&Config{TelemetryMode: "bogus"}).TelemetryConfigured() {
-		t.Error("invalid mode should not report configured (consent must still apply)")
-	}
-	if !(&Config{TelemetryMode: "bogus", Telemetry: ptr(true)}).TelemetryConfigured() {
-		t.Error("invalid mode with a legacy bool should still report configured")
-	}
-}
-
 func TestGetEnterMode(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -284,8 +238,7 @@ func TestIsFirstRun(t *testing.T) {
 
 func TestSavePreservesUnknownKeys(t *testing.T) {
 	// Regression: an older binary whose struct lacks a field a newer fleet wrote
-	// must not silently drop it on save (the theme-reset / consent-prompt-
-	// reappears bug). Load captures unknown keys; Save re-merges them.
+	// must not silently drop it on save (the theme-reset bug). Load captures unknown keys; Save re-merges them.
 	t.Setenv("HOME", t.TempDir())
 
 	// Simulate a config written by a newer fleet: a key this struct knows
@@ -437,8 +390,7 @@ func TestGetAccountUsageStyle(t *testing.T) {
 		{"explicit split", &Config{AccountUsageStyle: AccountUsageSplit}, AccountUsageSplit},
 		{"explicit grouped", &Config{AccountUsageStyle: AccountUsageGrouped}, AccountUsageGrouped},
 		{"explicit off", &Config{AccountUsageStyle: AccountUsageOff}, AccountUsageOff},
-		// A typo must not silently remove a readout with no error anywhere —
-		// unlike telemetry, where the conservative answer is to send less.
+		// A typo must not silently remove a readout with no error anywhere.
 		{"unrecognized style falls back to split", &Config{AccountUsageStyle: "bogus"}, AccountUsageSplit},
 		{"legacy false (user hid the strip) migrates to off", &Config{ShowAccountUsage: ptr(false)}, AccountUsageOff},
 		{"legacy true was just the default", &Config{ShowAccountUsage: ptr(true)}, AccountUsageSplit},

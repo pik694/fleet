@@ -28,10 +28,9 @@ const (
 // legacyEnvAliases maps new env var names to the legacy names that should
 // populate them when the new name is unset.
 var legacyEnvAliases = map[string]string{
-	"FLEET_INSTANCE_ID":        "BRIZZCODE_INSTANCE_ID",
-	"FLEET_DEBUG":              "BRIZZ_DEBUG",
-	"FLEET_TELEMETRY_DISABLED": "BRIZZ_TELEMETRY_DISABLED",
-	"FLEET_DEMO_PREFIX":        "BRIZZ_DEMO_PREFIX",
+	"FLEET_INSTANCE_ID": "BRIZZCODE_INSTANCE_ID",
+	"FLEET_DEBUG":       "BRIZZ_DEBUG",
+	"FLEET_DEMO_PREFIX": "BRIZZ_DEMO_PREFIX",
 }
 
 // AliasLegacyEnv copies legacy BRIZZ* env vars into FLEET_* names when the

@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/debuglog"
 	"github.com/brizzai/fleet/internal/ticket"
 )
@@ -30,31 +29,6 @@ const liteFields = "summary,status,priority"
 
 // fullFields is everything Materialize writes to disk, in ONE round trip.
 const fullFields = "summary,status,priority,assignee,labels,parent,subtasks,issuelinks,attachment,description,comment"
-
-// failures are one-shot rather than polled, so this throttle isn't stopping a
-// flood — it stops a user who creates ten worktrees against a broken credential
-// from emitting ten identical events. reason is a low-cardinality label, never
-// an issue key or a path.
-const failTrackInterval = 10 * time.Minute
-
-var (
-	failMu   sync.Mutex
-	failLast time.Time
-)
-
-func trackFailure(reason string) {
-	failMu.Lock()
-	if !failLast.IsZero() && time.Since(failLast) < failTrackInterval {
-		failMu.Unlock()
-		return
-	}
-	failLast = time.Now()
-	failMu.Unlock()
-	analytics.Track(analytics.EventTicketCommandFailure, map[string]any{
-		"provider": kind,
-		"reason":   reason,
-	})
-}
 
 // apiError is Atlassian's error envelope. Present on most 4xx replies, absent
 // on some, which is why classify never depends on it alone.
@@ -149,10 +123,8 @@ func doWith(ctx context.Context, cred Credential, timeout time.Duration, method,
 		// a cancelled request wraps its own type. Wrapped with %w so callers
 		// can errors.Is it.
 		if ctx.Err() == context.DeadlineExceeded {
-			trackFailure("timeout")
 			return fmt.Errorf("jira: request timed out: %w", ctx.Err())
 		}
-		trackFailure("transport")
 		return fmt.Errorf("jira: %w", err)
 	}
 	defer resp.Body.Close()
@@ -164,7 +136,6 @@ func doWith(ctx context.Context, cred Credential, timeout time.Duration, method,
 	if err := classify(resp.StatusCode, raw); err != nil {
 		if err != ticket.ErrNotFound {
 			debuglog.Logger.Debug("jira: request failed", "status", resp.StatusCode, "error", err)
-			trackFailure(reasonFor(err))
 		}
 		return err
 	}
@@ -172,20 +143,6 @@ func doWith(ctx context.Context, cred Credential, timeout time.Duration, method,
 		return nil
 	}
 	return json.Unmarshal(raw, out)
-}
-
-// reasonFor collapses an error to a low-cardinality analytics label. Never the
-// error string: those can carry an issue key.
-func reasonFor(err error) string {
-	switch err {
-	case ticket.ErrNotAuthenticated:
-		return "not_authenticated"
-	case ticket.ErrNotConnected:
-		return "not_connected"
-	case ticket.ErrNotFound:
-		return "not_found"
-	}
-	return "request_failed"
 }
 
 // ---------------------------------------------------------------------------
@@ -483,7 +440,6 @@ func moveToStarted(ctx context.Context, key string) (string, error) {
 	}
 	path := "/rest/api/3/issue/" + url.PathEscape(key) + "/transitions"
 	if err := do(ctx, ticket.StateTimeout, http.MethodGet, path, nil, &list); err != nil {
-		trackFailure("state_write_failed")
 		return "", err
 	}
 	t, ok := startedTransition(list.Transitions)
@@ -492,7 +448,6 @@ func moveToStarted(ctx context.Context, key string) (string, error) {
 	}
 	body := map[string]any{"transition": map[string]string{"id": t.ID}}
 	if err := do(ctx, ticket.StateTimeout, http.MethodPost, path, body, nil); err != nil {
-		trackFailure("state_write_failed")
 		return "", err
 	}
 	if t.To.Name != "" {

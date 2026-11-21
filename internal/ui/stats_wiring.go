@@ -20,8 +20,8 @@ import (
 // round trips behind the Stats screen (`i`) and the weekly "Your week" badge.
 //
 // Everything here stays on this machine. stats.db is fed enums, ids, numbers
-// and repo base names only, and nothing in this file may reach
-// internal/analytics — the tee runs one way, from fleet into the local file.
+// and repo base names only — the tee runs one way, from fleet into the local
+// file.
 
 // statsOpenStore opens stats.db for NewHome. A seam so the package tests, which
 // build a Home per test, never open a database each (TestMain swaps it out).
@@ -131,6 +131,17 @@ func (h *Home) recordStatsJump(action, key string, moved bool) {
 // caller cannot know the previous status (a restart that ran off-loop).
 func (h *Home) recordStatus(id string, from, to session.Status) {
 	h.statsStore.RecordStatus(id, string(from), string(to), time.Now())
+}
+
+// logAction is ActionLog.Add plus the local Stats tee, which reads the action
+// name only through its own fixed table.
+func (h *Home) logAction(action, detail string, success bool) {
+	h.actionLog.Add(action, detail, success)
+	if success {
+		if a := statsActionFor(action); a != "" {
+			h.recordStats(a)
+		}
+	}
 }
 
 // statsActionFor maps an ActionLog action name onto a stats enum. The table is
@@ -302,7 +313,7 @@ func statsWeekKey(weekStart time.Time) string {
 // the badge advertises `i`, so `i` is what answers it.
 func (h *Home) openStats() tea.Cmd {
 	if h.statsStore == nil {
-		h.setError("stats_unavailable", errors.New("stats unavailable — stats.db could not be opened (see debug log)"))
+		h.setError(errors.New("stats unavailable — stats.db could not be opened (see debug log)"))
 		return nil
 	}
 	// Opening Stats is not recorded as an action: pressing `i` must not inflate
@@ -318,7 +329,7 @@ func (h *Home) openStats() tea.Cmd {
 // inside Stats).
 func (h *Home) openRecap() tea.Cmd {
 	if h.statsStore == nil {
-		h.setError("stats_unavailable", errors.New("stats unavailable — stats.db could not be opened (see debug log)"))
+		h.setError(errors.New("stats unavailable — stats.db could not be opened (see debug log)"))
 		return nil
 	}
 	return h.statsRecapCmd(true)
@@ -376,7 +387,7 @@ func (h *Home) handleStatsMsg(msg tea.Msg) (tea.Cmd, bool) {
 		if msg.err != nil {
 			debuglog.Logger.Warn("stats: recap failed", "err", msg.err)
 			if msg.open {
-				h.setError("stats_recap_failed", fmt.Errorf("weekly recap: %w", msg.err))
+				h.setError(fmt.Errorf("weekly recap: %w", msg.err))
 			}
 			return nil, true
 		}
@@ -404,7 +415,7 @@ func (h *Home) handleStatsMsg(msg tea.Msg) (tea.Cmd, bool) {
 
 	case statsCopiedMsg:
 		if msg.err != nil {
-			h.setError("stats_copy_failed", fmt.Errorf("copy card: %w", msg.err))
+			h.setError(fmt.Errorf("copy card: %w", msg.err))
 			return nil, true
 		}
 		if msg.redacted {

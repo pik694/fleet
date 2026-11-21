@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/debuglog"
 	"github.com/brizzai/fleet/internal/session"
 )
@@ -30,7 +29,7 @@ const SnoozeGlyph = "☾"
 // SnoozeDuration is one entry in the duration picker. Fixed set, no custom
 // input — the whole point is to decide in one keystroke.
 type SnoozeDuration struct {
-	// ID is the analytics/label key ("30m", "1h", "4h", "tomorrow").
+	// ID is the preset's key ("30m", "1h", "4h", "tomorrow").
 	ID string
 	// Label is what the picker row reads.
 	Label string
@@ -153,7 +152,7 @@ type snoozeScope struct {
 	groupKey string
 	// label names the target in toasts ("Fix the drawer bug", "main", "fleet").
 	label string
-	// kind is the analytics dimension: session | checkout | origin.
+	// kind is the scope the action log names: session | checkout | origin.
 	kind string
 }
 
@@ -188,16 +187,15 @@ func (h *Home) snoozed(sc snoozeScope) bool {
 
 // applySnooze sets one of the preset durations on the cursor's scope.
 func (h *Home) applySnooze(sc snoozeScope, d SnoozeDuration) {
-	h.applySnoozeUntil(sc, d.Resolve(time.Now()), d.ID)
+	h.applySnoozeUntil(sc, d.Resolve(time.Now()))
 }
 
-// applySnoozeUntil sets an already-resolved deadline. durationID is the
-// analytics dimension — a preset id, or "custom" for a typed duration.
+// applySnoozeUntil sets an already-resolved deadline.
 //
 // A group snooze also collapses the group: the point of muting a repo is to get
 // it out of your way, and a fold is the strongest way to say "not today". The
 // user can still re-expand it.
-func (h *Home) applySnoozeUntil(sc snoozeScope, until time.Time, durationID string) {
+func (h *Home) applySnoozeUntil(sc snoozeScope, until time.Time) {
 	if sc.session != nil {
 		sc.session.SetSnoozedUntil(until)
 		if err := h.storage.SetSessionSnooze(sc.session.ID, until); err != nil {
@@ -212,10 +210,6 @@ func (h *Home) applySnoozeUntil(sc snoozeScope, until time.Time, durationID stri
 	}
 	h.rebuildFlatItems()
 	h.logAction("snooze "+sc.kind, sc.label, true)
-	analytics.Track(analytics.EventSnoozeSet, map[string]interface{}{
-		"scope":    sc.kind,
-		"duration": durationID,
-	})
 	h.setInfo(fmt.Sprintf("Snoozed %s until %s", sc.label, formatSnoozeWake(until, time.Now())))
 }
 
@@ -244,10 +238,6 @@ func (h *Home) clearSnooze(sc snoozeScope) {
 	}
 	h.rebuildFlatItems()
 	h.logAction("wake "+sc.kind, sc.label, true)
-	analytics.Track(analytics.EventSnoozeCleared, map[string]interface{}{
-		"scope":  sc.kind,
-		"reason": "manual",
-	})
 	h.setInfo(fmt.Sprintf("Woke %s", sc.label))
 }
 
@@ -282,7 +272,6 @@ func (h *Home) maybeWakeSnoozed() bool {
 		}
 	}
 	if changed {
-		analytics.Track(analytics.EventSnoozeCleared, map[string]interface{}{"reason": "expired"})
 		h.rebuildFlatItems()
 	}
 	return changed

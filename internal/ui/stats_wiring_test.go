@@ -10,7 +10,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/config"
 	"github.com/brizzai/fleet/internal/session"
 	"github.com/brizzai/fleet/internal/stats"
@@ -31,7 +30,7 @@ func statsTestHome(t *testing.T, withStore bool) *Home {
 		statsOpenStore = func() (*stats.Store, error) { return stats.Open(path) }
 		t.Cleanup(func() { statsOpenStore = prev })
 	}
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	t.Cleanup(func() { _ = h.statsStore.Close() })
 	h.width, h.height = 120, 40
 	h.statsView.SetSize(120, 40)

@@ -3,8 +3,8 @@
 // ~/.config/fleet/stats.db, backfills agent turns from the transcripts of
 // sessions fleet launched, and computes the Report the Stats screen renders.
 //
-// Nothing in this package may reach internal/analytics. The recorder writes
-// enums and numbers only — never a prompt, title, path or message body.
+// Nothing in this package leaves the machine. The recorder writes enums and
+// numbers only — never a prompt, title, path or message body.
 package stats
 
 import "time"

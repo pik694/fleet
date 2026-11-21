@@ -103,16 +103,16 @@ func copilotPaneRunning(content string) bool {
 //
 // A definite pane state (a menu, or the working footer) overrides a stale hook,
 // as for Codex: approving a permission fires no hook until the tool finishes.
-func (s *Session) updateCopilotStatus(oldStatus Status, hasHook bool, hookStatus, hookReason string, log *slog.Logger) {
+func (s *Session) updateCopilotStatus(oldStatus Status, hasHook bool, hookStatus string, log *slog.Logger) {
 	// The agent has run (it fired a hook), its pane is back at a shell, and
 	// its process is gone. The pane alone isn't enough: a tcsh respawn (no
 	// exec), Ctrl+Z, or a split window all show a shell over a live Copilot.
 	if hasHook && tmux.IsShellCommand(s.paneCommand()) && s.copilotOwnerGone() {
-		s.applyHookStatus(oldStatus, "dead", hookReason, log)
+		s.applyHookStatus(oldStatus, "dead", log)
 		return
 	}
 
-	s.updatePaneLedStatus("copilot", oldStatus, hasHook, hookStatus, hookReason, copilotPaneWaiting, copilotPaneRunning,
+	s.updatePaneLedStatus("copilot", oldStatus, hasHook, hookStatus, copilotPaneWaiting, copilotPaneRunning,
 		func(hook string) string {
 			if (hook == "running" || hook == "waiting") && s.copilotTurnAborted() {
 				return "finished"

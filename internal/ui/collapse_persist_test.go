@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/config"
 	"github.com/brizzai/fleet/internal/git"
 	"github.com/brizzai/fleet/internal/session"
@@ -18,7 +17,7 @@ func newPersistTestHome(t *testing.T) *Home {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { storage.Close() })
-	return NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	return NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 }
 
 func collapsedSet(t *testing.T, h *Home) map[string]bool {

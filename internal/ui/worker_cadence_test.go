@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/config"
 	"github.com/brizzai/fleet/internal/session"
 )
@@ -252,7 +251,7 @@ func TestGitWorkerCycleSkipsWhileAttaching(t *testing.T) {
 		}
 		t.Cleanup(func() { storage.Close() })
 
-		h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+		h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 		s := session.NewSession("s", filepath.Join(dir, "repo"))
 		h.sessions = []*session.Session{s}
 		return h

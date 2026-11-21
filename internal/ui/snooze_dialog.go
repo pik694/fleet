@@ -16,8 +16,6 @@ import (
 // resolves the duration itself so the handler never re-parses.
 type snoozeSelectedMsg struct {
 	until time.Time
-	// durationID is the analytics dimension: a preset id ("1h") or "custom".
-	durationID string
 }
 
 // snoozeMaxDuration bounds the custom input. Past a month a snooze is really
@@ -132,7 +130,7 @@ func (d *SnoozeDialog) Update(msg tea.Msg) (*SnoozeDialog, tea.Cmd) {
 			until := sel.Resolve(time.Now())
 			d.Hide()
 			return d, func() tea.Msg {
-				return snoozeSelectedMsg{until: until, durationID: sel.ID}
+				return snoozeSelectedMsg{until: until}
 			}
 		}
 		dur, err := parseSnoozeDuration(d.input.Value())
@@ -145,7 +143,7 @@ func (d *SnoozeDialog) Update(msg tea.Msg) (*SnoozeDialog, tea.Cmd) {
 		until := time.Now().Add(dur)
 		d.Hide()
 		return d, func() tea.Msg {
-			return snoozeSelectedMsg{until: until, durationID: "custom"}
+			return snoozeSelectedMsg{until: until}
 		}
 	}
 

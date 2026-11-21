@@ -29,10 +29,10 @@ func TestAliasLegacyEnv(t *testing.T) {
 	})
 
 	t.Run("no-op when neither is set", func(t *testing.T) {
-		t.Setenv("FLEET_TELEMETRY_DISABLED", "")
-		t.Setenv("BRIZZ_TELEMETRY_DISABLED", "")
+		t.Setenv("FLEET_DEMO_PREFIX", "")
+		t.Setenv("BRIZZ_DEMO_PREFIX", "")
 		AliasLegacyEnv()
-		if got := os.Getenv("FLEET_TELEMETRY_DISABLED"); got != "" {
+		if got := os.Getenv("FLEET_DEMO_PREFIX"); got != "" {
 			t.Errorf("expected empty, got %q", got)
 		}
 	})

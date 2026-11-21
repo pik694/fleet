@@ -22,7 +22,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/brizzai/fleet/internal/agent"
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/chrome"
 	"github.com/brizzai/fleet/internal/claudeaccount"
 	"github.com/brizzai/fleet/internal/config"
@@ -292,7 +291,6 @@ type Home struct {
 	// subject from h.cursor, which an async rebuild can move — see contextMenuTarget.
 	contextMenuTarget   contextMenuTarget
 	sessionCreateDialog *SessionCreateDialog
-	consentDialog       *ConsentDialog
 	onboardingDialog    *OnboardingDialog
 
 	// Stats (stats_wiring.go): the local, never-sent personal analytics.
@@ -313,11 +311,8 @@ type Home struct {
 	// launchpad is the first-run experience shown when the fleet is empty:
 	// recent repos mined from Claude Code history, ready to resume.
 	// launchpadDismissed lets the user Esc out to the bare empty state.
-	// launchpadShownPending holds launchpad_shown's repo count until the consent
-	// prompt is answered — see discoveryMsg.
-	launchpad             *Launchpad
-	launchpadDismissed    bool
-	launchpadShownPending int
+	launchpad          *Launchpad
+	launchpadDismissed bool
 
 	pendingWorkspaces []*PendingWorkspace // in-flight workspace creations
 	pendingForkCtx    *forkContext        // set while Shift+F worktree picker is open; consumed on pick/cancel
@@ -518,11 +513,6 @@ type Home struct {
 	originKeyMu    sync.Mutex
 	originKeyCache map[string]string
 
-	// Pre-resolved per-install identity (device hash + git name/email +
-	// OS version). Discovered in main.go before the TUI starts so Init
-	// doesn't shell out on the Bubble Tea Update() thread.
-	identity analytics.Identity
-
 	actionLog *ActionLog
 
 	// Background worker for async status/git/PR updates.
@@ -550,15 +540,6 @@ type Home struct {
 	program *tea.Program
 
 	startTime time.Time // app start time for uptime tracking
-
-	// First-run action trace (internal/ui/firstrun_trace.go). Set once in
-	// NewHome and never reassigned — the status worker and the attach callback
-	// read it off the Update goroutine — and nil for every run past the first,
-	// which is the whole cost a regular pays for this.
-	firstRun *firstRunTrace
-	// The dialog traceModalOpened last saw, so a dialog appearing is recorded
-	// once rather than on every Update it is up for. Update-goroutine only.
-	traceModal string
 
 	// Throttles the "gh rate-limited" WARN log so it doesn't fire every
 	// 2s tick. Reset to time.Time{} when a refresh comes back clean.
@@ -591,7 +572,7 @@ type Home struct {
 }
 
 // NewHome creates the main TUI model.
-func NewHome(storage *session.StateDB, cfg *config.Config, version string, identity analytics.Identity) *Home {
+func NewHome(storage *session.StateDB, cfg *config.Config, version string) *Home {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	fi := NewTextInput()
@@ -636,7 +617,6 @@ func NewHome(storage *session.StateDB, cfg *config.Config, version string, ident
 		accountPicker:          NewAccountPickerDialog(),
 		allowedAccounts:        NewAllowedAccountsDialog(),
 		sessionCreateDialog:    NewSessionCreateDialog(),
-		consentDialog:          NewConsentDialog(),
 		onboardingDialog:       NewOnboardingDialog(cfg),
 		statsView:              NewStatsView(),
 		recapView:              NewRecapView(),
@@ -647,7 +627,6 @@ func NewHome(storage *session.StateDB, cfg *config.Config, version string, ident
 		filterInput:            fi,
 		cfg:                    cfg,
 		version:                version,
-		identity:               identity,
 		actionLog:              NewActionLog(100),
 		statusTrigger:          make(chan struct{}, 1),
 		gitTrigger:             make(chan struct{}, 1),
@@ -655,9 +634,6 @@ func NewHome(storage *session.StateDB, cfg *config.Config, version string, ident
 		ctx:                    ctx,
 		cancel:                 cancel,
 		startTime:              time.Now(),
-	}
-	if firstRunTraceShouldRecord() {
-		h.firstRun = newFirstRunTrace(h.startTime)
 	}
 	h.statsStore = openStatsStoreOrNil()
 	// The startup scan computes this week's recap; the tick only asks again
@@ -885,8 +861,8 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// keep the spinner animating and swallow everything else so no key or worker
 	// message mutates state the teardown goroutine is touching concurrently. A
 	// second Ctrl+C is the escape hatch: if teardown wedges (a stuck worktree
-	// remove, a wedged telemetry drain), force an immediate exit rather than
-	// spinning forever with no way out.
+	// remove), force an immediate exit rather than spinning forever with no way
+	// out.
 	if h.quitting {
 		switch m := msg.(type) {
 		case shutdownFrameMsg:
@@ -898,11 +874,6 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return h, nil
-	}
-	// A dialog can open from a message as easily as from a key, so the check
-	// runs after the message is handled rather than at each Show() call site.
-	if h.firstRun != nil {
-		defer h.traceModalOpened()
 	}
 	// Every message repaints, because any of them may have changed the screen —
 	// except a mouse message, which is guilty until proven innocent: the wheel
@@ -955,7 +926,6 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.accountsDialog.SetSize(msg.Width, msg.Height)
 		h.connectLinear.SetSize(msg.Width, msg.Height)
 		h.connectJira.SetSize(msg.Width, msg.Height)
-		h.consentDialog.SetSize(msg.Width, msg.Height)
 		h.onboardingDialog.SetSize(msg.Width, msg.Height)
 		h.statsView.SetSize(msg.Width, msg.Height)
 		h.recapView.SetSize(msg.Width, msg.Height)
@@ -1032,7 +1002,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case shellCreateResultMsg:
 		if msg.err != nil {
-			h.setError("shell_create_failed", msg.err)
+			h.setError(msg.err)
 			return h, nil
 		}
 		h.workerMu.Lock()
@@ -1054,7 +1024,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case shellRestartMsg:
 		if msg.err != nil {
-			h.setError("shell_restart_failed", msg.err)
+			h.setError(msg.err)
 			return h, nil
 		}
 		if err := h.storage.UpdateShellTmuxName(msg.id, msg.tmuxName); err != nil {
@@ -1154,7 +1124,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case accountStrategyMsg:
 		h.cfg.AccountStrategy = claudeaccount.ParseStrategy(msg.strategy)
 		if err := h.cfg.Save(); err != nil {
-			h.setError("account_strategy_save_failed", fmt.Errorf("could not save account strategy: %w", err))
+			h.setError(fmt.Errorf("could not save account strategy: %w", err))
 			return h, nil
 		}
 		h.logAction("account strategy", h.cfg.AccountStrategy, true)
@@ -1177,7 +1147,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		h.cfg.DefaultAccount = msg.email
 		if err := h.cfg.Save(); err != nil {
-			h.setError("default_account_save_failed", fmt.Errorf("could not save default account: %w", err))
+			h.setError(fmt.Errorf("could not save default account: %w", err))
 			return h, nil
 		}
 		return h, h.persistAccounts("Default account: " + msg.email)
@@ -1193,7 +1163,6 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			h.setInfo("cannot fork: " + ag.DisplayName() + " has no fork")
 			return h, nil
 		}
-		analytics.Track(analytics.EventForkSession, map[string]interface{}{"agent": string(ag)})
 		s := session.NewSession(msg.title, msg.path)
 		s.WorkspaceName = msg.workspaceName
 		s.ForkFromID = msg.parentClaudeSessionID
@@ -1286,24 +1255,9 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sessionDeleteMsg:
 		if msg.err != nil {
-			h.setError("session_delete_failed", msg.err)
+			h.setError(msg.err)
 			return h, nil
 		}
-		// Engagement signals: lifetime, prompt count, and orphaned-flag tell us
-		// whether the session was actually used before being thrown away.
-		if s, ok := h.sessionByID[msg.id]; ok {
-			lifetime := time.Since(s.CreatedAt).Seconds()
-			analytics.Distribution(analytics.MetricSessionLifetimeSeconds, lifetime, nil)
-			if s.PromptCount > 0 {
-				analytics.Distribution(analytics.MetricSessionPromptsPerSession, float64(s.PromptCount), nil)
-			}
-			if s.LastAccessedAt.IsZero() {
-				analytics.Track(analytics.EventSessionOrphaned, map[string]interface{}{
-					"lifetime_seconds": int(lifetime),
-				})
-			}
-		}
-		analytics.Track(analytics.EventSessionDeleted, nil)
 		h.recordStats(stats.ActionDelete) // here, not at the confirm prompt: this is the yes
 		return h.deferDelete(msg)
 
@@ -1320,7 +1274,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sessionRestartMsg:
 		if msg.err != nil {
-			h.setError("restart_failed", fmt.Errorf("restart failed: %w", msg.err))
+			h.setError(fmt.Errorf("restart failed: %w", msg.err))
 		}
 		// Update storage with new status and tmux session name.
 		if s, ok := h.sessionByID[msg.id]; ok {
@@ -1400,7 +1354,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !ok {
 			return h, nil
 		}
-		h.applySnoozeUntil(sc, msg.until, msg.durationID)
+		h.applySnoozeUntil(sc, msg.until)
 		return h, nil
 
 	case accountPickedMsg:
@@ -1429,7 +1383,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return h, nil
 		}
 		if err := h.cfg.SetAllowedAccounts(OriginExpandKey(msg.originKey), msg.emails); err != nil {
-			h.setError("account_rules_save_failed", fmt.Errorf("could not save account rules: %w", err))
+			h.setError(fmt.Errorf("could not save account rules: %w", err))
 			return h, nil
 		}
 		h.logAction("allowed accounts", fmt.Sprintf("%s → %s", msg.originKey, allowedSummary(msg.emails)), true)
@@ -1463,7 +1417,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 		}
 		if len(msg.errors) > 0 {
-			h.setError("reload_all_failed", fmt.Errorf("reloaded %d sessions, %d failed: %s",
+			h.setError(fmt.Errorf("reloaded %d sessions, %d failed: %s",
 				msg.restarted, len(msg.errors), strings.Join(msg.errors, ", ")))
 		} else if msg.restarted > 0 {
 			h.setInfo(fmt.Sprintf("Reloaded %d sessions (%d skipped)", msg.restarted, msg.skipped))
@@ -1472,14 +1426,8 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sessionRenameMsg:
 		if s, ok := h.sessionByID[msg.id]; ok {
-			// Manual rename on a previously auto-named session = signal that
-			// our auto-title heuristic produced a bad name.
-			if s.TitleGenerated && !s.ManuallyRenamed {
-				analytics.Track(analytics.EventManualRenameAfterAuto, nil)
-			}
 			s.Title = msg.newTitle
 			s.ManuallyRenamed = true
-			analytics.Track(analytics.EventSessionRenamed, nil)
 			h.recordStats(stats.ActionRename)
 			if err := h.storage.UpdateTitle(s.ID, msg.newTitle); err != nil {
 				debuglog.Logger.Error("storage: UpdateTitle (rename)", "id", s.ID, "err", err)
@@ -1493,18 +1441,6 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case settingsClosedMsg:
 		// Re-read tick interval from config after settings change.
-		// Also reconcile the live analytics client with the (possibly
-		// changed) telemetry mode — otherwise the change only takes
-		// effect on next launch. If the user just enabled telemetry
-		// mid-session, mark them active today so DAU catches them now.
-		analytics.SyncEnabled(h.cfg.GetTelemetryMode(), h.version, h.identity)
-		analytics.Heartbeat()
-		// Once per commit with the final theme, not once per ←/→ through the live
-		// preview — and only after SyncEnabled, so a user who turned telemetry off
-		// (or down to Basic) in this same visit isn't tracked by the old client.
-		if msg.theme != "" {
-			analytics.Track(analytics.EventThemeChanged, map[string]interface{}{"theme": msg.theme})
-		}
 		// Re-read the drawer height (clamped) so a change takes effect without a
 		// relaunch; the next render/sync resizes the live stream to match.
 		h.drawerHeight = h.cfg.GetDrawerHeight()
@@ -1515,50 +1451,11 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case onboardingClosedMsg:
 		// Theme was applied live during the picker; nothing to re-read.
-		if msg.kept {
-			h.trace(traceThemeKeep)
-		} else {
-			h.trace(traceThemeSkip)
-		}
-		return h, nil
-
-	case consentResultMsg:
-		// Accept → full (usage + git identity); decline → minimal (the same
-		// usage, anonymously). "Off" is Settings-only. Persist
-		// the mode so we don't ask again, clearing any legacy bool so it can't
-		// shadow the new field, then run startup analytics in the chosen mode.
-		mode := config.TelemetryMinimal
-		if msg.accepted {
-			mode = config.TelemetryFull
-			h.trace(traceConsentFull)
-		} else {
-			h.trace(traceConsentBasic)
-		}
-		h.cfg.TelemetryMode = mode
-		h.cfg.Telemetry = nil
-		h.cfg.AnalyticsConsentSeen = true
-		if err := h.cfg.Save(); err != nil {
-			debuglog.Logger.Error("config: save after consent", "err", err)
-		}
-		// Both outcomes initialize the client and send the same events; only
-		// full mode attaches git identity and a people profile.
-		h.workerMu.Lock()
-		repoCount := len(session.GroupByRepo(h.sessions))
-		h.workerMu.Unlock()
-		h.fireStartupAnalytics(repoCount)
-		if h.launchpadShownPending > 0 {
-			analytics.Track(analytics.EventLaunchpadShown, map[string]interface{}{
-				"discovered_repos": h.launchpadShownPending,
-			})
-			h.launchpadShownPending = 0
-		}
-		// First-run theme onboarding follows the consent prompt.
-		h.maybeShowOnboarding()
 		return h, nil
 
 	case openEditorMsg:
 		if msg.err != nil {
-			h.setError("editor_open_failed", fmt.Errorf("editor: %w", msg.err))
+			h.setError(fmt.Errorf("editor: %w", msg.err))
 			return h, nil
 		}
 		h.recordStats(stats.ActionEditorOpen)
@@ -1566,7 +1463,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case openPRMsg:
 		if msg.err != nil {
-			h.setError("pr_open_failed", msg.err)
+			h.setError(msg.err)
 			return h, nil
 		}
 		h.recordStats(stats.ActionPROpen)
@@ -1574,7 +1471,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case copyPRLinkMsg:
 		if msg.err != nil {
-			h.setError("pr_link_copy_failed", msg.err)
+			h.setError(msg.err)
 			return h, nil
 		}
 		h.recordStats(stats.ActionCopyPRLink)
@@ -1583,7 +1480,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case quickApproveMsg:
 		if msg.err != nil {
-			h.setError("approve_failed", fmt.Errorf("approve: %w", msg.err))
+			h.setError(fmt.Errorf("approve: %w", msg.err))
 			return h, nil
 		}
 		h.recordStats(stats.ActionQuickApprove)
@@ -1600,7 +1497,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case branchCheckoutMsg:
 		h.branchDialog.Hide()
 		if msg.err != nil {
-			h.setError("checkout_failed", fmt.Errorf("checkout: %w", msg.err))
+			h.setError(fmt.Errorf("checkout: %w", msg.err))
 			return h, nil
 		}
 		// Refresh git info off the Update goroutine — RefreshGitInfo shells
@@ -1622,7 +1519,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case statusSnapshotMsg:
 		if msg.err != nil {
-			h.setError("snapshot_failed", fmt.Errorf("snapshot: %w", msg.err))
+			h.setError(fmt.Errorf("snapshot: %w", msg.err))
 		} else {
 			h.setInfo("Snapshot saved: " + msg.path)
 		}
@@ -1637,7 +1534,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			h.worktreeDialog.Hide()
 			h.clearPendingFork()
-			h.setError("worktree_list_failed", fmt.Errorf("worktree list: %w", msg.err))
+			h.setError(fmt.Errorf("worktree list: %w", msg.err))
 			return h, nil
 		}
 		if msg.provider.IsCustom() {
@@ -1698,14 +1595,6 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case workspaceCreateMsg:
 		// Close dialog immediately — creation runs in background.
 		h.createWorkspaceDialog.Hide()
-		analytics.Track(analytics.EventWorkspaceCreated, map[string]interface{}{
-			"provider": func() string {
-				if msg.provider.IsCustom() {
-					return "shell"
-				}
-				return "git"
-			}(),
-		})
 
 		pw := &PendingWorkspace{
 			ID:       generatePendingID(),
@@ -1792,8 +1681,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.removePendingWorkspace(msg.pendingID)
 
 		if msg.err != nil {
-			h.setError("workspace_create_failed", fmt.Errorf("workspace create failed: %w", msg.err))
-			analytics.Track(analytics.EventGitCommandFailure, map[string]interface{}{"command": "worktree_create"})
+			h.setError(fmt.Errorf("workspace create failed: %w", msg.err))
 			h.clearPendingFork()
 			h.rebuildFlatItems()
 			// Clamp cursor if it was on the removed phantom.
@@ -1908,7 +1796,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.destroyAttempted {
 			h.handleWorktreeDestroyResult(msg)
 		} else if msg.workspaceErr != nil {
-			h.setError("workspace_destroy_failed", fmt.Errorf("workspace destroy: %w", msg.workspaceErr))
+			h.setError(fmt.Errorf("workspace destroy: %w", msg.workspaceErr))
 		}
 		return h, nil
 
@@ -2071,31 +1959,15 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			go h.gitWorker()
 			h.startAccountWorker()
 		}
-		if h.launchpadActive() {
-			h.trace(traceLaunchpadShown)
-		}
-		if len(msg.items) > 0 {
-			// On a first launch the consent prompt is still unanswered, so no
-			// analytics client exists yet and Track would drop this silently —
-			// every time, since the splash hides the prompt until this handler
-			// flips booted. Hold the count; consentResultMsg sends it.
-			if h.consentDialog.IsVisible() {
-				h.launchpadShownPending = len(msg.items)
-			} else {
-				analytics.Track(analytics.EventLaunchpadShown, map[string]interface{}{
-					"discovered_repos": len(msg.items),
-				})
-			}
-		}
 		return h, nil
 
 	case loadSessionsMsg:
 		if msg.err != nil {
-			h.setError("load_sessions_failed", msg.err)
+			h.setError(msg.err)
 			return h, nil
 		}
 		if msg.warning != "" {
-			h.setError("load_sessions_warning", fmt.Errorf("%s", msg.warning))
+			h.setError(fmt.Errorf("%s", msg.warning))
 		}
 		h.sessions = msg.sessions
 		h.shells = msg.shells
@@ -2217,14 +2089,6 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Kick off the bootstrap fan-out: resolve every visible repo's
 		// origin/branch/dirty info in parallel before the steady-state
 		// worker starts. While this runs, View() shows the boot splash.
-		// First-launch consent flow: prompt iff (a) the user hasn't
-		// been asked yet AND (b) they haven't already opted out via
-		// FLEET_TELEMETRY_DISABLED / DO_NOT_TRACK. When env opt-out is
-		// set there's nothing to ask about — analytics.Init would
-		// refuse to send anyway. We do NOT persist AnalyticsConsentSeen
-		// here so the prompt re-appears if the user later unsets the
-		// env var. fireStartupAnalytics is still safe to call: Init
-		// re-checks opt-out and creates a disabled client.
 		var startupCmd tea.Cmd
 		if !h.workerStarted {
 			h.workerStarted = true
@@ -2241,33 +2105,13 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				startupCmd = tea.Batch(h.bootstrapGitInfo(repos), h.splashTick())
 			}
 
-			switch {
-			case h.cfg.AnalyticsConsentSeen:
-				h.fireStartupAnalytics(len(groups))
-			case analytics.IsOptedOutByEnv():
-				h.fireStartupAnalytics(len(groups))
-			case h.cfg.TelemetryConfigured():
-				// User already set a telemetry preference in config (e.g. from a
-				// pre-consent-dialog version). Don't re-prompt; honor the
-				// configured mode (GetTelemetryMode migrates the legacy bool).
-				h.fireStartupAnalytics(len(groups))
-			default:
-				h.consentDialog.Show()
-			}
-
-			// The theme onboarding is a brand-new-user experience. When the
-			// consent prompt is shown it follows that (see consentResultMsg).
-			// When no consent prompt is shown we decide here based on whether
-			// this is a genuinely fresh install: a brand-new user who skipped
-			// consent only because they're env-opted-out of telemetry still
-			// deserves onboarding; an existing/returning install must never be
-			// surprised by it (it could overwrite their theme), so mark it seen.
-			if !h.consentDialog.IsVisible() {
-				if h.cfg.IsFirstRun() {
-					h.maybeShowOnboarding()
-				} else {
-					h.markOnboardingSeen()
-				}
+			// The theme onboarding is a brand-new-user experience: an
+			// existing/returning install must never be surprised by it (it
+			// could overwrite their theme), so mark it seen.
+			if h.cfg.IsFirstRun() {
+				h.maybeShowOnboarding()
+			} else {
+				h.markOnboardingSeen()
 			}
 		}
 
@@ -2515,8 +2359,7 @@ func overlayAt(top, base string, x, y int) string {
 // Mirrors the early-returns in renderBody (plus the command-palette overlay) so
 // a sticky bottom-right tip is never composited on top of a dialog.
 func (h *Home) modalOpen() bool {
-	return h.consentDialog.IsVisible() ||
-		h.onboardingDialog.IsVisible() ||
+	return h.onboardingDialog.IsVisible() ||
 		h.helpOverlay.IsVisible() ||
 		h.statsView.IsVisible() ||
 		h.recapView.IsVisible() ||
@@ -2554,11 +2397,7 @@ func (h *Home) renderBody() string {
 	// no longer on screen.
 	h.layout = screenLayout{}
 
-	// Modals take priority. Consent goes first — it gates analytics init
-	// and must be the user's first interaction with the TUI.
-	if h.consentDialog.IsVisible() {
-		return h.consentDialog.View()
-	}
+	// Modals take priority.
 	if h.onboardingDialog.IsVisible() {
 		return h.onboardingDialog.View()
 	}
@@ -2848,7 +2687,6 @@ func (h *Home) routeToModal(msg tea.Msg) (tea.Cmd, bool) {
 	cmdMsg := msg
 	if km, ok := msg.(tea.KeyPressMsg); ok {
 		cmdMsg = normalizeKey(km)
-		h.traceModalKey(km)
 	}
 
 	switch {
@@ -2869,19 +2707,9 @@ func (h *Home) routeToModal(msg tea.Msg) (tea.Cmd, bool) {
 		view, cmd := h.statsView.Update(cmdMsg)
 		h.statsView = view
 		return cmd, true
-	case h.consentDialog.IsVisible():
-		dialog, cmd := h.consentDialog.Update(cmdMsg)
-		h.consentDialog = dialog
-		return cmd, true
 	case h.onboardingDialog.IsVisible():
-		// Comparing the cursor either side of Update records a theme cycle
-		// without a second copy of which keys cycle it.
-		before := h.onboardingDialog.ThemeCursor()
 		dialog, cmd := h.onboardingDialog.Update(cmdMsg)
 		h.onboardingDialog = dialog
-		if h.onboardingDialog.IsVisible() && h.onboardingDialog.ThemeCursor() != before {
-			h.trace(traceThemeCycle)
-		}
 		return cmd, true
 	case h.settingsDialog.IsVisible():
 		dialog, cmd := h.settingsDialog.Update(cmdMsg)
@@ -3041,19 +2869,15 @@ func (h *Home) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch normalizeKey(msg).String() {
 		case "j", "down":
 			h.launchpad.Move(1)
-			h.trace(traceNav)
 			return h, nil
 		case "k", "up":
 			h.launchpad.Move(-1)
-			h.trace(traceNav)
 			return h, nil
 		case "space":
 			h.launchpad.Toggle()
-			h.trace(traceLaunchpadToggle)
 			return h, nil
 		case "A":
 			h.launchpad.ToggleAll()
-			h.trace(traceLaunchpadToggle)
 			return h, nil
 		case "enter":
 			// Consume the launchpad as we fire the set: launching is async, so
@@ -3062,14 +2886,9 @@ func (h *Home) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// conversation.
 			set := h.launchpad.LaunchSet()
 			h.launchpadDismissed = true
-			h.trace(traceLaunchpadEnter)
 			return h, h.launchLaunchpadSet(set)
 		case "esc":
 			h.launchpadDismissed = true
-			h.trace(traceLaunchpadEsc)
-			analytics.Track(analytics.EventLaunchpadSkipped, map[string]interface{}{
-				"discovered": h.launchpad.ItemCount(),
-			})
 			return h, nil
 		}
 	}
@@ -3140,7 +2959,6 @@ func (h *Home) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// falls through rather than returning; it owns no text and matches on the US
 	// position itself, above.)
 	msg = normalizeKey(msg)
-	h.traceKey(msg.String())
 
 	// Frost trigger (see noteTrail). Every key of the run still does its
 	// usual job; only the one that completes it is taken.
@@ -3161,19 +2979,15 @@ func (h *Home) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return h, h.fetchPreviewForSelected()
 	case "shift+down":
 		h.jumpToHeader(1)
-		analytics.Track(analytics.EventHeaderJump, headerJumpProps("checkout"))
 		return h, h.fetchPreviewForSelected()
 	case "shift+up":
 		h.jumpToHeader(-1)
-		analytics.Track(analytics.EventHeaderJump, headerJumpProps("checkout"))
 		return h, h.fetchPreviewForSelected()
 	case "ctrl+shift+down":
 		h.jumpToOrigin(1)
-		analytics.Track(analytics.EventHeaderJump, headerJumpProps("origin"))
 		return h, h.fetchPreviewForSelected()
 	case "ctrl+shift+up":
 		h.jumpToOrigin(-1)
-		analytics.Track(analytics.EventHeaderJump, headerJumpProps("origin"))
 		return h, h.fetchPreviewForSelected()
 	case "pgdown":
 		target := h.cursor + h.sidebarPanelRows()
@@ -3210,7 +3024,6 @@ func (h *Home) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "space":
 		// Jump to next waiting (or finished) session.
 		h.jumpToNextAttentionSession()
-		analytics.Track(analytics.EventSpaceJump, nil)
 		return h, h.fetchPreviewForSelected()
 	case "left", "h":
 		h.collapseRepoAtCursor()
@@ -3301,26 +3114,21 @@ func (h *Home) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "e":
 		if s := h.selectedSession(); s != nil {
 			h.logAction("open editor", fmt.Sprintf("%q at %s", h.cfg.GetEditor(), s.ProjectPath), true)
-			analytics.Track(analytics.EventEditorOpened, map[string]interface{}{"editor": editorName(h.cfg.GetEditor())})
 		}
 		return h, h.openEditorSelected()
 	case "p":
 		h.logAction("open PR", "", true)
-		analytics.Track(analytics.EventPROpened, nil)
 		return h, h.openPRInBrowser()
 	case "ctrl+p":
 		h.logAction("copy PR link", "", true)
-		analytics.Track(analytics.EventPRLinkCopied, nil)
 		return h, h.copyPRLink()
 	case "P":
 		// Jump to next red (or, failing that, green) PR.
 		h.jumpToNextAttentionPR()
-		analytics.Track(analytics.EventPRJump, nil)
 		return h, h.fetchPreviewForSelected()
 	case "Y":
 		if s := h.selectedSession(); s != nil {
 			h.logAction("quick approve", s.Title, true)
-			analytics.Track(analytics.EventQuickApprove, nil)
 		}
 		return h, h.quickApproveSelected()
 	case "b":
@@ -3369,7 +3177,6 @@ func (h *Home) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		h.filterActive = true
 		h.filterInput.Focus()
-		analytics.Track(analytics.EventFilterUsed, nil)
 		return h, nil
 	case "esc":
 		// Cancel pending slot-assign leader.
@@ -3394,7 +3201,6 @@ func (h *Home) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		h.recordStats(stats.ActionPaletteOpen)
 		h.commandPalette.Show(h.buildPaletteItems(), h.recentPaletteIDs)
 		h.cfg.NoteFeatureUsed(tipCmdPaletteID, tipLearnedThreshold) // retire the discovery tip once they know it
-		analytics.Track(analytics.EventCommandPalette, nil)
 		return h, h.maybeLoadPaletteTickets()
 	case "t":
 		// Straight to the tickets tab: `t` means "show me my tickets", not
@@ -3405,11 +3211,9 @@ func (h *Home) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		h.recordStats(stats.ActionPaletteOpen)
 		h.commandPalette.ShowOnTab(h.buildPaletteItems(), h.recentPaletteIDs, PaletteTabTickets)
-		analytics.Track(analytics.EventCommandPalette, nil)
 		return h, h.maybeLoadPaletteTickets()
 	case "S":
 		h.settingsDialog.Show()
-		analytics.Track(analytics.EventSettingsOpened, nil)
 		return h, nil
 	case "i":
 		return h, h.openStats()
@@ -3467,7 +3271,6 @@ func (h *Home) beginQuit(source string) tea.Cmd {
 		return nil // already tearing down; ignore repeat presses
 	}
 	debuglog.Logger.Info("quit requested", "source", source)
-	h.trace(traceQuit)
 	h.quitting = true
 	// Capture the frame to dim behind the overlay, mirroring View()'s guard
 	// order so a quit during boot freezes what the user is actually looking at
@@ -3486,8 +3289,8 @@ func (h *Home) beginQuit(source string) tea.Cmd {
 }
 
 // performShutdown runs the full teardown off the Update loop — close the hook
-// watcher / control client / drawer stream, finalize pending deletes, emit quit
-// analytics, drain telemetry — then returns tea.Quit. Runs in a command
+// watcher / control client / drawer stream, finalize pending deletes —
+// then returns tea.Quit. Runs in a command
 // goroutine; the Update loop is guarded (see the h.quitting short-circuit) so
 // nothing else touches the state this mutates concurrently.
 func (h *Home) performShutdown() tea.Cmd {
@@ -3502,54 +3305,10 @@ func (h *Home) performShutdown() tea.Cmd {
 		// Finalize all pending deletes before quitting.
 		h.finalizeAllPendingDeletes()
 
-		uptime := time.Since(h.startTime).Seconds()
-
-		// h.cancel() (in beginQuit) only signals the status worker — it can
-		// still be mid-cycle, holding workerMu and mutating h.sessions. Take
-		// the lock for the direct reads; collectSnapshot and anyAttached
-		// self-lock.
-		h.workerMu.Lock()
-		runningCount := 0
-		waitingCount := 0
-		for _, s := range h.sessions {
-			switch s.GetStatus() {
-			case session.StatusRunning:
-				runningCount++
-			case session.StatusWaiting:
-				waitingCount++
-			}
-		}
-		sessionCount := len(h.sessions)
-		h.workerMu.Unlock()
-
-		analytics.Track(analytics.EventAppQuit, map[string]interface{}{
-			"uptime_seconds": int(uptime),
-			"session_count":  sessionCount,
-		})
-		analytics.Distribution(analytics.MetricAppUptimeSeconds, uptime, nil)
-		analytics.EmitSnapshot(h.collectSnapshot(), analytics.SnapshotQuit)
-
-		if runningCount > 0 || waitingCount > 0 {
-			analytics.Track(analytics.EventQuitWithRunningSessions, map[string]interface{}{
-				"running_count": runningCount,
-				"waiting_count": waitingCount,
-			})
-		}
-
-		if analytics.MarkOnboardingMilestone(analytics.MilestoneFirstQuit) {
-			analytics.Track(analytics.EventOnboardingFirstQuit, map[string]interface{}{
-				"uptime_seconds":         int(uptime),
-				"session_count":          sessionCount,
-				"attached_at_least_once": h.anyAttached(),
-			})
-		}
-		h.sendFirstRunTrace(int(uptime))
 		// Drains the recorder queue, so the last few seconds of activity land.
 		if err := h.statsStore.Close(); err != nil {
 			debuglog.Logger.Warn("stats: close failed", "err", err)
 		}
-
-		analytics.Shutdown()
 		return tea.Quit()
 	}
 }
@@ -3587,12 +3346,6 @@ func (h *Home) activateCursorRow() tea.Cmd {
 	}
 	if s := h.selectedSession(); s != nil {
 		h.logAction("attach session", s.Title, true)
-		analytics.Track(analytics.EventSessionAttached, map[string]interface{}{"agent": string(s.Agent)})
-		if analytics.MarkOnboardingMilestone(analytics.MilestoneFirstAttach) {
-			analytics.Track(analytics.EventOnboardingFirstAttach, map[string]interface{}{
-				"seconds_since_install": int(analytics.SecondsSinceInstall()),
-			})
-		}
 	}
 	return h.attachSelected()
 }
@@ -3614,10 +3367,6 @@ func (h *Home) attachSessionByID(id string) tea.Cmd {
 	}
 	return h.attachSession(s)
 }
-
-// attachBailThreshold is how short an attach has to be to count as a bail: the
-// user entered a session and came straight back out.
-const attachBailThreshold = 10 * time.Second
 
 func (h *Home) attachSession(s *session.Session) tea.Cmd {
 	if s == nil || !s.IsAlive() {
@@ -3655,16 +3404,6 @@ func (h *Home) attachSession(s *session.Session) tea.Cmd {
 		if err == nil {
 			attached := time.Since(attachStart)
 			h.statsStore.RecordAttach(s.ID, attachStart, attached)
-			analytics.Distribution(analytics.MetricAttachedSessionUptimeSecs, attached.Seconds(), nil)
-			if attached < attachBailThreshold {
-				h.trace(traceDetachBail)
-				analytics.Track(analytics.EventAttachBailed, map[string]interface{}{
-					"agent":   string(s.Agent),
-					"seconds": int(attached.Seconds()),
-				})
-			} else {
-				h.trace(traceDetach)
-			}
 		}
 		return statusUpdateMsg{attachedSessionID: s.ID}
 	})
@@ -3720,8 +3459,8 @@ func (h *Home) launchpadActive() bool {
 }
 
 // maybeShowOnboarding shows the one-time first-run theme/onboarding screen,
-// unless the user has already seen it. Called after the consent flow resolves
-// so the order is consent → theme onboarding → launchpad.
+// unless the user has already seen it, so the order is theme onboarding →
+// launchpad.
 func (h *Home) maybeShowOnboarding() {
 	if !h.cfg.DisplayOnboardingSeen {
 		h.onboardingDialog.Show()
@@ -3770,7 +3509,7 @@ func (h *Home) handleSessionCreate(msg sessionCreateMsg) (tea.Model, tea.Cmd) {
 		ag = agent.Parse(h.cfg.GetDefaultAgent())
 	}
 	if _, err := exec.LookPath(ag.Binary()); err != nil {
-		h.setError("agent_cli_missing", fmt.Errorf("%s CLI not found: install %s to create sessions", ag.Binary(), ag.DisplayName()))
+		h.setError(fmt.Errorf("%s CLI not found: install %s to create sessions", ag.Binary(), ag.DisplayName()))
 		return h, nil
 	}
 	msg.agent = ag
@@ -3780,7 +3519,7 @@ func (h *Home) handleSessionCreate(msg sessionCreateMsg) (tea.Model, tea.Cmd) {
 			// Refused rather than launched on the ambient login: the allowlist
 			// exists precisely because using an account it excludes is worse than
 			// not proceeding, and the ambient login may be that account.
-			h.setError("account_not_allowed", errors.New(blocked))
+			h.setError(errors.New(blocked))
 			return h, nil
 		}
 		msg.account = account
@@ -3792,7 +3531,7 @@ func (h *Home) handleSessionCreate(msg sessionCreateMsg) (tea.Model, tea.Cmd) {
 		// enforced in one surface and not the other is worse than not having
 		// one — the cost of a miss here is billing work to the wrong
 		// subscription.
-		h.setError("account_not_allowed", fmt.Errorf("account not allowed for this repo: %s isn't in allowed_accounts", h.accountLabel(msg.account)))
+		h.setError(fmt.Errorf("account not allowed for this repo: %s isn't in allowed_accounts", h.accountLabel(msg.account)))
 		return h, nil
 	}
 	// A conflicting ambient credential outranks the per-session login, so the
@@ -3808,7 +3547,7 @@ func (h *Home) handleSessionCreate(msg sessionCreateMsg) (tea.Model, tea.Cmd) {
 	if msg.account != "" {
 		if conflict := claudeaccount.GuardConflictingAuth(); !conflict.Empty() {
 			if conflict.Fatal {
-				h.setError("conflicting_auth", errors.New(conflict.Message(msg.account)))
+				h.setError(errors.New(conflict.Message(msg.account)))
 				return h, nil
 			}
 			h.setInfo(conflict.Message(msg.account))
@@ -4095,7 +3834,7 @@ func (h *Home) moveSelectedToAccount(email string) tea.Cmd {
 		// Refuse rather than half-move: an in-memory move that isn't persisted
 		// would silently revert at the next fleet restart, and a session quietly
 		// returning to a spent account is worse than one that never left.
-		h.setError("account_move_failed", fmt.Errorf("could not move account: %w", err))
+		h.setError(fmt.Errorf("could not move account: %w", err))
 		return nil
 	}
 	s.Account = email
@@ -4235,7 +3974,6 @@ func (h *Home) startSessionCmd(msg sessionCreateMsg) tea.Cmd {
 		seedDirTrust(msg.agent, msg.path)
 		if err := s.Start(); err != nil {
 			debuglog.Logger.Error("session Start() failed", "title", msg.title, "path", msg.path, "err", err)
-			analytics.Track(analytics.EventTmuxCommandFailure, map[string]interface{}{"command": "new_session"})
 			return sessionCreateResultMsg{err: err}
 		}
 		return sessionCreateResultMsg{session: s}
@@ -4250,14 +3988,9 @@ func (h *Home) launchLaunchpadSet(items []discovery.Recent) tea.Cmd {
 		return nil
 	}
 	if _, err := exec.LookPath("claude"); err != nil {
-		h.setError("agent_cli_missing", fmt.Errorf("claude CLI not found: install Claude Code to create sessions"))
-		analytics.Track(analytics.EventStartupFailed, map[string]interface{}{"reason": "claude_missing"})
+		h.setError(fmt.Errorf("claude CLI not found: install Claude Code to create sessions"))
 		return nil
 	}
-	analytics.Track(analytics.EventLaunchpadLaunched, map[string]interface{}{
-		"selected":   len(items),
-		"discovered": h.launchpad.ItemCount(),
-	})
 	cmds := make([]tea.Cmd, 0, len(items))
 	// startSessionCmd is called directly here rather than through
 	// handleSessionCreate, so the account has to be resolved per item — without
@@ -4272,7 +4005,7 @@ func (h *Home) launchLaunchpadSet(items []discovery.Recent) tea.Cmd {
 			// Skipped, not aborted: this creates several sessions at once, and one
 			// repo with an unsatisfiable allowlist must not cost the user the rest
 			// of their selection. Named so the gap in the sidebar has a reason.
-			h.setError("launchpad_repo_skipped", fmt.Errorf("launchpad skipped a repo: %s — %s", filepath.Base(it.Path), blocked))
+			h.setError(fmt.Errorf("launchpad skipped a repo: %s — %s", filepath.Base(it.Path), blocked))
 			h.logAction("launchpad skip", it.Path, false)
 			continue
 		}
@@ -4290,21 +4023,8 @@ func (h *Home) launchLaunchpadSet(items []discovery.Recent) tea.Cmd {
 
 func (h *Home) handleSessionCreateResult(msg sessionCreateResultMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		h.setError("session_start_failed", fmt.Errorf("failed to start session: %w", msg.err))
+		h.setError(fmt.Errorf("failed to start session: %w", msg.err))
 		return h, nil
-	}
-
-	// "source" is also set on the adopted-session path, so it must be set here
-	// too — otherwise it reads as null on every TUI-created session and the
-	// property can't be split on.
-	analytics.Track(analytics.EventSessionCreated, map[string]interface{}{
-		"agent":  string(msg.session.Agent),
-		"source": "tui",
-	})
-	if analytics.MarkOnboardingMilestone(analytics.MilestoneFirstSession) {
-		analytics.Track(analytics.EventOnboardingFirstSessionCreated, map[string]interface{}{
-			"seconds_since_install": int(analytics.SecondsSinceInstall()),
-		})
 	}
 
 	s := msg.session
@@ -4328,7 +4048,7 @@ func (h *Home) handleSessionCreateResult(msg sessionCreateResultMsg) (tea.Model,
 
 	// Save to storage.
 	if err := h.storage.SaveSession(s.ToRow()); err != nil {
-		h.setError("session_save_failed", fmt.Errorf("failed to save session: %w", err))
+		h.setError(fmt.Errorf("failed to save session: %w", err))
 	}
 
 	// Auto-select the new session.
@@ -4348,7 +4068,7 @@ func (h *Home) handleSessionCreateResult(msg sessionCreateResultMsg) (tea.Model,
 // handleAdoptSessions folds sessions created by another fleet process into the
 // running TUI. It mirrors handleSessionCreateResult's bookkeeping minus the
 // parts that don't apply: the DB row already exists (no SaveSession), and this
-// isn't a session *this* user just asked for (no analytics, no auto-select).
+// isn't a session *this* user just asked for (no auto-select).
 func (h *Home) handleAdoptSessions(msg adoptSessionsMsg) (tea.Model, tea.Cmd) {
 	// The worker diffed against a snapshot taken at cycle start, so it can offer
 	// a session the Update loop created in the meantime. This is the only place
@@ -4396,15 +4116,6 @@ func (h *Home) handleAdoptSessions(msg adoptSessionsMsg) (tea.Model, tea.Cmd) {
 			if err := h.storage.PinRepo(repo); err != nil {
 				debuglog.Logger.Error("failed to pin repo", "repo", repo, "err", err)
 			}
-		}
-		analytics.Track(analytics.EventSessionCreated, map[string]interface{}{
-			"agent":  string(s.Agent),
-			"source": "cli",
-		})
-		if analytics.MarkOnboardingMilestone(analytics.MilestoneFirstSession) {
-			analytics.Track(analytics.EventOnboardingFirstSessionCreated, map[string]interface{}{
-				"seconds_since_install": int(analytics.SecondsSinceInstall()),
-			})
 		}
 		// The creating process already spun up the tmux server, so the probe
 		// runs against a live one. Self-guards: nil unless the path sits under
@@ -5075,12 +4786,11 @@ func (h *Home) confirmRestartSelected() tea.Cmd {
 	return nil
 }
 
-// restartSession respawns (or full-restarts) the given session. Action-log and
-// analytics fire here so they reflect an actual restart — not a cancelled
-// confirm — regardless of entry point (key, palette, confirmed dialog).
+// restartSession respawns (or full-restarts) the given session. The action log is
+// written here so it reflects an actual restart — not a cancelled confirm —
+// regardless of entry point (key, palette, confirmed dialog).
 func (h *Home) restartSession(s *session.Session) tea.Cmd {
 	h.logAction("restart session", s.Title, true)
-	analytics.Track(analytics.EventSessionRestarted, nil)
 	h.markSessionAccessed(s)
 	// A restart is the moment a stuck session gets unstuck, so it is also the
 	// moment to get it off an account that cannot run it.
@@ -5119,7 +4829,6 @@ func (h *Home) restartSession(s *session.Session) tea.Cmd {
 // handler). Optimistically shows StatusStarting so the ⏸ row clears immediately.
 func (h *Home) resumeSelected(s *session.Session) tea.Cmd {
 	h.logAction("resume session", s.Title, true)
-	analytics.Track(analytics.EventSessionRestarted, nil)
 	h.markSessionAccessed(s)
 	// Waking is a relaunch like any other, and a session suspended for hours is
 	// the likeliest of all to find its account spent or its token expired. No
@@ -5731,7 +5440,7 @@ func (h *Home) forkSelected() tea.Cmd {
 		return nil
 	}
 	if s.GetClaudeSessionID() == "" {
-		h.setError("fork_no_conversation_id", fmt.Errorf("cannot fork: session has no Claude conversation ID yet"))
+		h.setError(fmt.Errorf("cannot fork: session has no Claude conversation ID yet"))
 		return nil
 	}
 	h.logAction("fork session", s.Title, true)
@@ -5839,16 +5548,16 @@ func (h *Home) forkToWorktreeSelected() tea.Cmd {
 		return nil
 	}
 	if s.Agent != agent.Claude {
-		h.setError("fork_worktree_claude_only", fmt.Errorf("fork to worktree is Claude-only; use 'f' to fork this session in place"))
+		h.setError(fmt.Errorf("fork to worktree is Claude-only; use 'f' to fork this session in place"))
 		return nil
 	}
 	if s.GetClaudeSessionID() == "" {
-		h.setError("fork_no_conversation_id", fmt.Errorf("cannot fork to worktree: session has no Claude conversation ID yet"))
+		h.setError(fmt.Errorf("cannot fork to worktree: session has no Claude conversation ID yet"))
 		return nil
 	}
 	repoPath := session.GetRepoRoot(s.ProjectPath)
 	if repoPath == "" {
-		h.setError("fork_worktree_not_a_repo", fmt.Errorf("cannot fork to worktree: session is not inside a git repo"))
+		h.setError(fmt.Errorf("cannot fork to worktree: session is not inside a git repo"))
 		return nil
 	}
 	h.logAction("fork to worktree", s.Title, true)
@@ -5971,7 +5680,6 @@ func (h *Home) originHasCheckoutExcept(origin, except string) bool {
 }
 
 func (h *Home) toggleRepoGroup() {
-	h.trace(traceToggleGroup)
 	if h.cursor < 0 || h.cursor >= len(h.flatItems) {
 		return
 	}
@@ -6042,15 +5750,6 @@ func (h *Home) collapseRepoAtCursor() {
 func (h *Home) jumpToHeader(direction int) {
 	h.cursor = NextHeaderItem(h.flatItems, h.cursor, direction)
 	h.syncViewport()
-}
-
-// headerJumpProps labels which of the two header motions fired. Both emit
-// EventHeaderJump, so without the level they are one indistinguishable number
-// and there is no way to ask whether anyone presses ctrl+shift+↑/↓. Both are
-// labelled rather than only the new one, so the split reads as origin vs.
-// checkout instead of origin vs. unlabelled.
-func headerJumpProps(level string) map[string]interface{} {
-	return map[string]interface{}{"level": level}
 }
 
 // jumpToOrigin is jumpToHeader over origin headers only — the same motion one
@@ -6309,7 +6008,7 @@ func (h *Home) getControlClient() *tmux.ControlClient {
 func (h *Home) enterFocusMode() tea.Cmd {
 	s := h.selectedSession()
 	if s == nil {
-		h.setError("focus_not_running", fmt.Errorf("cannot focus: session not running"))
+		h.setError(fmt.Errorf("cannot focus: session not running"))
 		return nil
 	}
 	// Cache-only, like focusTick and handleFocusKey: all three callers are
@@ -6318,7 +6017,7 @@ func (h *Home) enterFocusMode() tea.Cmd {
 	// is nearly every press — behaves exactly as before; only an unknown enters
 	// optimistically, and the next known-dead reading ejects.
 	if alive, known := s.IsAliveCached(); known && !alive {
-		h.setError("focus_not_running", fmt.Errorf("cannot focus: session not running"))
+		h.setError(fmt.Errorf("cannot focus: session not running"))
 		return nil
 	}
 	h.focusMode = true
@@ -6357,7 +6056,7 @@ func (h *Home) handleFocusKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	cc := h.getControlClient()
 	if cc == nil {
-		h.setError("tmux_connect_failed", fmt.Errorf("failed to connect to tmux"))
+		h.setError(fmt.Errorf("failed to connect to tmux"))
 		h.focusMode = false
 		h.sidebarDirty = true
 		return h, nil
@@ -6551,7 +6250,7 @@ func (h *Home) undoDelete() (tea.Model, tea.Cmd) {
 
 	// Re-insert into SQLite.
 	if err := h.storage.SaveSession(pd.Row); err != nil {
-		h.setError("undo_delete_failed", fmt.Errorf("undo failed: %w", err))
+		h.setError(fmt.Errorf("undo failed: %w", err))
 		return h, nil
 	}
 
@@ -6741,14 +6440,13 @@ func (h *Home) handleWorktreeDestroyResult(msg deleteCleanupDoneMsg) {
 		}
 	}
 	h.failedWorktreeRemovals[msg.repoPath] = true
-	analytics.Track(analytics.EventGitCommandFailure, map[string]interface{}{"command": "worktree_remove"})
 	h.rebuildFlatItems()
 
 	name := filepath.Base(msg.repoPath)
 	if len(msg.remainingHolders) > 0 {
-		h.setError("worktree_remove_blocked", fmt.Errorf("couldn't remove worktree %q — still held by %s; d to retry", name, strings.Join(msg.remainingHolders, ", ")))
+		h.setError(fmt.Errorf("couldn't remove worktree %q — still held by %s; d to retry", name, strings.Join(msg.remainingHolders, ", ")))
 	} else {
-		h.setError("worktree_remove_failed", fmt.Errorf("couldn't remove worktree %q: %w; d to retry", name, msg.workspaceErr))
+		h.setError(fmt.Errorf("couldn't remove worktree %q: %w; d to retry", name, msg.workspaceErr))
 	}
 }
 
@@ -6863,11 +6561,6 @@ func (h *Home) handleTick() (tea.Model, tea.Cmd) {
 
 	h.rebuildFlatItems()
 	h.refreshTips(!h.modalOpen())
-
-	// Daily-active heartbeat: no-op until the calendar day rolls over (or the
-	// client is disabled), so this is cheap to call every tick. Keeps DAU
-	// accurate for instances left running for days without a restart.
-	analytics.Heartbeat()
 
 	// Preview is now handled by the faster previewTick, no need to fetch here.
 	return h, tea.Batch(h.tick(), h.maybeRecapNewWeek(time.Now()))
@@ -7071,11 +6764,9 @@ func (h *Home) syncHookStatuses(sessions []*session.Session, resolveRotation boo
 				// process-based recovery never fires. The ownership tests inject
 				// AgentPID straight into UpdateHookStatus, so they stay green while
 				// production runs blind — hence TestSyncHookStatusesPropagatesAgentPID.
-				AgentPID:    hs.AgentPID,
-				UserPrompt:  hs.UserPrompt,
-				PromptCount: hs.PromptCount,
-				// SessionEnd's reason, which is what lets session_errored separate a
-				// /clear or /logout rotation from a session that actually died.
+				AgentPID:        hs.AgentPID,
+				UserPrompt:      hs.UserPrompt,
+				PromptCount:     hs.PromptCount,
 				Reason:          hs.Reason,
 				PromptSessionID: hs.PromptSessionID,
 			}, resolveRotation) {
@@ -7118,7 +6809,7 @@ func (h *Home) updateAndPersistStatus(s *session.Session) bool {
 	// A session whose tmux vanished may have been suspended or relaunched by
 	// another process (`fleet suspend`, `fleet restart`) rather than have died.
 	// Check its row BEFORE UpdateStatus: that reads a missing tmux session as a
-	// crash and acts on it at once — a crash dump, a session_errored event — and
+	// crash and acts on it at once — a crash dump — and
 	// the persist below would then erase the other process's record of what it
 	// did, within one fast pass and well before the external sweep could see it.
 	// Only on the way into error: a session already there has had its dump.
@@ -7133,17 +6824,6 @@ func (h *Home) updateAndPersistStatus(s *session.Session) bool {
 		// late to spare the dump, still in time to spare the row.
 		if newStatus == session.StatusError && h.adoptExternalLaunch(s) {
 			return true
-		}
-		switch newStatus {
-		case session.StatusError:
-			// The same move session_errored reports: not a session already in
-			// error, and not one still starting, whose launch reports its own
-			// failure (internal/session, newFailure).
-			if oldStatus != session.StatusError && oldStatus != session.StatusStarting {
-				h.trace(traceSessionError)
-			}
-		case session.StatusWaiting:
-			h.traceOnce(traceSessionWaiting)
 		}
 		if err := h.storage.UpdateStatus(s.ID, string(newStatus)); err != nil {
 			debuglog.Logger.Error("storage: UpdateStatus", "id", s.ID, "status", newStatus, "err", err)
@@ -8465,7 +8145,7 @@ func (h *Home) bindCurrentSessionToSlot(slot int) {
 		return
 	}
 	if err := h.storage.BindSlot(slot, s.ID); err != nil {
-		h.setError("slot_bind_failed", fmt.Errorf("bind slot: %w", err))
+		h.setError(fmt.Errorf("bind slot: %w", err))
 		return
 	}
 	for k, v := range h.slotBindings {
@@ -8491,7 +8171,7 @@ func (h *Home) unbindSlot(slot int) {
 		title = s.Title
 	}
 	if err := h.storage.UnbindSlot(slot); err != nil {
-		h.setError("slot_unbind_failed", fmt.Errorf("unbind slot: %w", err))
+		h.setError(fmt.Errorf("unbind slot: %w", err))
 		return
 	}
 	delete(h.slotBindings, slot)
@@ -8515,7 +8195,7 @@ func (h *Home) jumpToSlot(slot int) (tea.Model, tea.Cmd) {
 	if !ok {
 		delete(h.slotBindings, slot)
 		_ = h.storage.UnbindSlot(slot)
-		h.setError("slot_stale", fmt.Errorf("slot %d was stale, cleared", slot))
+		h.setError(fmt.Errorf("slot %d was stale, cleared", slot))
 		return h, nil
 	}
 
@@ -8908,39 +8588,13 @@ func (h *Home) loadSessions() tea.Msg {
 	}
 }
 
-// setError reports a real failure: an error toast and an error_occurred tagged
-// with category. Guidance such as
-// "no PR for this branch" is not a failure — it goes through setInfo, which does
-// none of those.
-//
-// category is a snake_case enum written here at the call site, and it is the ONLY
-// thing about the error that analytics sees. It used to be derived from the
-// message — the text before the first ':', kept when it read as fleet's own prose
-// — which had to refuse anything carrying a digit or a punctuation mark, since a
-// path, a branch name or a wrapped git error is made of exactly those. That
-// refusal was doing its job: it also swallowed most real failures into "other",
-// because fleet's messages say `restart failed: %w` and `slot %d was stale`, so a
-// user's whole first-day error history could read "other" and say nothing about
-// what they hit. A literal at the call site is both accurate and safe by
-// construction — no error text reaches the backend by any route, so the privacy
-// line no longer rests on a regex being strict enough, and rewording a message
-// can't silently retag it.
-//
-// The category is a parameter rather than a defaulted second helper so the
-// compiler asks for it: a variant taking only the error would be the "other" this
-// replaced, quietly reachable again.
-//
-// Keep the categories stable: they are what a funnel is grouped by, so renaming
-// one splits its history in two.
-func (h *Home) setError(category string, err error) {
+// setError reports a real failure as an error toast. Guidance such as
+// "no PR for this branch" is not a failure — it goes through setInfo.
+func (h *Home) setError(err error) {
 	h.err = err
 	h.errTime = time.Now()
 	if err != nil {
-		h.trace(traceToastError)
 		h.toasts.Add(ToastError, err.Error())
-		analytics.Track(analytics.EventErrorOccurred, map[string]interface{}{
-			"category": category,
-		})
 	}
 }
 
@@ -9491,12 +9145,6 @@ func (h *Home) dispatchCommand(id string) (tea.Model, tea.Cmd) {
 	case "attach":
 		if s := h.selectedSession(); s != nil {
 			h.logAction("attach session", s.Title, true)
-			analytics.Track(analytics.EventSessionAttached, map[string]interface{}{"agent": string(s.Agent)})
-			if analytics.MarkOnboardingMilestone(analytics.MilestoneFirstAttach) {
-				analytics.Track(analytics.EventOnboardingFirstAttach, map[string]interface{}{
-					"seconds_since_install": int(analytics.SecondsSinceInstall()),
-				})
-			}
 		}
 		return h, h.attachSelected()
 	case "focus":
@@ -9522,11 +9170,9 @@ func (h *Home) dispatchCommand(id string) (tea.Model, tea.Cmd) {
 		return h, nil
 	case "jump_next":
 		h.jumpToNextAttentionSession()
-		analytics.Track(analytics.EventSpaceJump, nil)
 		return h, h.fetchPreviewForSelected()
 	case "jump_next_pr":
 		h.jumpToNextAttentionPR()
-		analytics.Track(analytics.EventPRJump, nil)
 		return h, h.fetchPreviewForSelected()
 	case "new_session":
 		repoPath := h.resolveCurrentRepo()
@@ -9623,21 +9269,17 @@ func (h *Home) dispatchCommand(id string) (tea.Model, tea.Cmd) {
 	case "editor":
 		if s := h.selectedSession(); s != nil {
 			h.logAction("open editor", fmt.Sprintf("%q at %s", h.cfg.GetEditor(), s.ProjectPath), true)
-			analytics.Track(analytics.EventEditorOpened, map[string]interface{}{"editor": editorName(h.cfg.GetEditor())})
 		}
 		return h, h.openEditorSelected()
 	case "open_pr":
 		h.logAction("open PR", "", true)
-		analytics.Track(analytics.EventPROpened, nil)
 		return h, h.openPRInBrowser()
 	case "copy_pr_link":
 		h.logAction("copy PR link", "", true)
-		analytics.Track(analytics.EventPRLinkCopied, nil)
 		return h, h.copyPRLink()
 	case "approve":
 		if s := h.selectedSession(); s != nil {
 			h.logAction("quick approve", s.Title, true)
-			analytics.Track(analytics.EventQuickApprove, nil)
 		}
 		return h, h.quickApproveSelected()
 	case "branch":
@@ -9650,11 +9292,9 @@ func (h *Home) dispatchCommand(id string) (tea.Model, tea.Cmd) {
 	case "filter":
 		h.filterActive = true
 		h.filterInput.Focus()
-		analytics.Track(analytics.EventFilterUsed, nil)
 		return h, nil
 	case "settings":
 		h.settingsDialog.Show()
-		analytics.Track(analytics.EventSettingsOpened, nil)
 		return h, nil
 	case "help":
 		h.helpOverlay.Show()
@@ -9665,13 +9305,11 @@ func (h *Home) dispatchCommand(id string) (tea.Model, tea.Cmd) {
 	case "stats_recap":
 		return h, h.openRecap()
 	case "reload_all":
-		analytics.Track(analytics.EventReloadAll, nil)
 		return h, h.reloadAll()
 	case "open_fda":
 		h.logAction("open full disk access", "", true)
 		return h, openFullDiskAccessSettings()
 	case "mark_all_read":
-		analytics.Track(analytics.EventMarkAllRead, nil)
 		h.markAllAsRead()
 		return h, nil
 	case "mark_unread":
@@ -9817,7 +9455,6 @@ func (h *Home) markUnreadSelected() {
 		h.setInfo("Session hasn't run yet — nothing to mark unread")
 		return
 	}
-	analytics.Track(analytics.EventMarkUnread, nil)
 	// Counted here, past the guards, not in flagUnread: snooze expiry flips
 	// sessions through it too, and that isn't the user pressing m.
 	h.recordStats(stats.ActionMarkUnread)

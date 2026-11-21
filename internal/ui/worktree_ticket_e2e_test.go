@@ -8,7 +8,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/brizzai/fleet/internal/analytics"
 	"github.com/brizzai/fleet/internal/config"
 	"github.com/brizzai/fleet/internal/linear"
 	"github.com/brizzai/fleet/internal/session"
@@ -30,7 +29,7 @@ func TestTicketLookupSurvivesTheRealMessageLoop(t *testing.T) {
 	}
 	defer storage.Close()
 
-	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test", analytics.Identity{})
+	h := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
 	h.width, h.height = 120, 40
 	h.worktreeDialog.SetSize(120, 40)
 	h.worktreeDialog.Show(nil, nil, nil, "/repo", "master", boundTo("BRZ"), nil)

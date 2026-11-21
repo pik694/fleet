@@ -356,7 +356,7 @@ func (h *Home) clickOverlay(m tea.Mouse) (tea.Model, tea.Cmd) {
 
 // sendToModal hands a synthetic keypress to whichever dialog owns the screen.
 // The point is reuse, not simulation: activating a row means exactly what the
-// dialog already does for Enter, including the analytics, the guards and the
+// dialog already does for Enter, including the guards and the
 // message it emits.
 func (h *Home) sendToModal(key tea.KeyPressMsg) tea.Cmd {
 	cmd, _ := h.routeToModal(key)
