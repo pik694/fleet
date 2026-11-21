@@ -76,6 +76,15 @@ func DefaultDBPath() string {
 	return filepath.Join(home, ".config", "fleet", "state.db")
 }
 
+func ensureOwnerOnlyFile(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return f.Chmod(0600)
+}
+
 // Open opens or creates the SQLite database with WAL mode.
 func Open(dbPath string) (*StateDB, error) {
 	debuglog.Logger.Info("opening database", "path", dbPath)
@@ -83,6 +92,11 @@ func Open(dbPath string) (*StateDB, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0700); err != nil {
 		debuglog.Logger.Error("failed to create db directory", "path", dbPath, "error", err)
 		return nil, fmt.Errorf("create db directory: %w", err)
+	}
+
+	if err := ensureOwnerOnlyFile(dbPath); err != nil {
+		debuglog.Logger.Error("failed to restrict db file mode", "path", dbPath, "error", err)
+		return nil, fmt.Errorf("restrict db file mode: %w", err)
 	}
 
 	db, err := sql.Open("sqlite", dbPath)

@@ -61,9 +61,10 @@ type StatusFile struct {
 // was equally true of the shared-tmp scheme; don't build on an ordering nobody
 // enforces.
 func WriteStatusFile(hooksDir, instanceID string, sf *StatusFile) error {
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+	if err := os.MkdirAll(hooksDir, 0700); err != nil {
 		return err
 	}
+	_ = os.Chmod(hooksDir, 0700)
 
 	data, err := json.Marshal(sf)
 	if err != nil {
@@ -78,10 +79,6 @@ func WriteStatusFile(hooksDir, instanceID string, sf *StatusFile) error {
 	defer os.Remove(tmpPath) // no-op once the rename below succeeds
 
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(0644); err != nil {
 		tmp.Close()
 		return err
 	}

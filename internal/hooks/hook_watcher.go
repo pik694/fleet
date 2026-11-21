@@ -61,10 +61,11 @@ func GetHooksDir() string {
 func NewHookWatcher() (*HookWatcher, error) {
 	hooksDir := GetHooksDir()
 
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+	if err := os.MkdirAll(hooksDir, 0700); err != nil {
 		debuglog.Logger.Error("hook watcher: failed to create hooks dir", "dir", hooksDir, "err", err)
 		return nil, err
 	}
+	_ = os.Chmod(hooksDir, 0700)
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {

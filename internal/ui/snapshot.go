@@ -119,7 +119,7 @@ func captureStatusSnapshot(s *session.Session, sessionID string, hb workerHeartb
 		dirName := fmt.Sprintf("%s_%s", now.Format("2006-01-02T15-04-05"), safeTitle)
 		home, _ := os.UserHomeDir()
 		snapshotDir = filepath.Join(home, ".config", "fleet", "snapshots", dirName)
-		if err := os.MkdirAll(snapshotDir, 0755); err != nil {
+		if err := os.MkdirAll(snapshotDir, 0700); err != nil {
 			return snapshotResult{sessionID: sessionID, err: fmt.Errorf("mkdir: %w", err)}
 		}
 	}
@@ -156,11 +156,11 @@ func captureStatusSnapshot(s *session.Session, sessionID string, hb workerHeartb
 	// 7. Write files.
 	if persist {
 		if claudeStatusRaw != nil {
-			_ = os.WriteFile(filepath.Join(snapshotDir, "claude_session_status.json"), claudeStatusRaw, 0644)
+			_ = os.WriteFile(filepath.Join(snapshotDir, "claude_session_status.json"), claudeStatusRaw, 0600)
 		}
-		_ = os.WriteFile(filepath.Join(snapshotDir, "pane_raw.txt"), []byte(rawPane), 0644)
-		_ = os.WriteFile(filepath.Join(snapshotDir, "pane_clean.txt"), []byte(paneClean), 0644)
-		_ = os.WriteFile(filepath.Join(snapshotDir, "debug_tail.txt"), []byte(debugTail), 0644)
+		_ = os.WriteFile(filepath.Join(snapshotDir, "pane_raw.txt"), []byte(rawPane), 0600)
+		_ = os.WriteFile(filepath.Join(snapshotDir, "pane_clean.txt"), []byte(paneClean), 0600)
+		_ = os.WriteFile(filepath.Join(snapshotDir, "debug_tail.txt"), []byte(debugTail), 0600)
 		// All goroutine stacks — pins exactly what the status worker is blocked
 		// on when its heartbeat (worker block in snapshot.json) shows it
 		// stalled. runtime.Stack(all=true) pauses every goroutine to collect,
@@ -168,7 +168,7 @@ func captureStatusSnapshot(s *session.Session, sessionID string, hb workerHeartb
 		writeGoroutineDump(filepath.Join(snapshotDir, "goroutines.txt"))
 
 		jsonData, _ := json.MarshalIndent(meta, "", "  ")
-		_ = os.WriteFile(filepath.Join(snapshotDir, "snapshot.json"), jsonData, 0644)
+		_ = os.WriteFile(filepath.Join(snapshotDir, "snapshot.json"), jsonData, 0600)
 
 		debuglog.Logger.Info("status snapshot captured", "dir", snapshotDir, "session", sessionID)
 	}
@@ -327,7 +327,7 @@ func writeWorkerStallDump(stalledFor time.Duration, cycleStart time.Time) string
 	}
 	dir := filepath.Join(home, ".config", "fleet", "snapshots",
 		now.Format("2006-01-02T15-04-05")+"_worker-stall")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return ""
 	}
 
@@ -342,7 +342,7 @@ func writeWorkerStallDump(stalledFor time.Duration, cycleStart time.Time) string
 		meta["cycle_in_flight_for"] = now.Sub(cycleStart).Round(time.Millisecond).String()
 	}
 	data, _ := json.MarshalIndent(meta, "", "  ")
-	_ = os.WriteFile(filepath.Join(dir, "stall.json"), data, 0644)
+	_ = os.WriteFile(filepath.Join(dir, "stall.json"), data, 0600)
 	return dir
 }
 
@@ -535,7 +535,7 @@ func copyFileStreaming(src, dst string) (int64, error) {
 		return 0, err
 	}
 	defer in.Close()
-	out, err := os.Create(dst)
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return 0, err
 	}

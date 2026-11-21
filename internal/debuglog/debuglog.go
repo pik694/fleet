@@ -34,12 +34,16 @@ func LogPath() string {
 func Init() {
 	initOnce.Do(func() {
 		path := LogPath()
-		_ = os.MkdirAll(filepath.Dir(path), 0755)
+		_ = os.MkdirAll(filepath.Dir(path), 0700)
+		if _, err := os.UserHomeDir(); err == nil {
+			_ = os.Chmod(filepath.Dir(path), 0700)
+		}
 		truncateIfNeeded(path)
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
 			return
 		}
+		_ = f.Chmod(0600)
 		mu.Lock()
 		logFile = f
 		level := slog.LevelInfo
@@ -82,5 +86,5 @@ func truncateIfNeeded(path string) {
 			break
 		}
 	}
-	_ = os.WriteFile(path, tail, 0644)
+	_ = os.WriteFile(path, tail, 0600)
 }

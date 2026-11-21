@@ -101,10 +101,10 @@ func Run() Report {
 		debuglog.Logger.Warn("migration: hooks step failed; not writing marker", "err", hooksErr)
 	}
 	if configErr == nil && tmuxErr == nil && hooksErr == nil {
-		if err := os.MkdirAll(newConfigDir, 0o755); err != nil {
+		if err := os.MkdirAll(newConfigDir, 0o700); err != nil {
 			debuglog.Logger.Warn("migration: failed to create config dir for marker",
 				"dir", newConfigDir, "err", err)
-		} else if err := os.WriteFile(markerPath, []byte("migrated from brizz-code\n"), 0o644); err != nil {
+		} else if err := os.WriteFile(markerPath, []byte("migrated from brizz-code\n"), 0o600); err != nil {
 			debuglog.Logger.Warn("migration: failed to write migration marker",
 				"path", markerPath, "err", err)
 		}

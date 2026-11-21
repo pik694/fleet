@@ -88,11 +88,23 @@ func DefaultPath() string {
 	return filepath.Join(home, ".config", "fleet", "stats.db")
 }
 
+func ensureOwnerOnlyFile(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return f.Chmod(0o600)
+}
+
 // Open opens (creating if needed) stats.db, migrates it, and starts the
 // recorder's writer goroutine.
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create stats dir: %w", err)
+	}
+	if err := ensureOwnerOnlyFile(path); err != nil {
+		return nil, fmt.Errorf("restrict stats db file mode: %w", err)
 	}
 	q := url.Values{}
 	q.Add("_pragma", "busy_timeout(5000)")
