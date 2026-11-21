@@ -54,6 +54,7 @@ cmd/fleet/wait.go      # `fleet wait <session...>` — block until done/idle/wai
 cmd/fleet/control.go   # `fleet answer|interrupt|submit|clear|restart|suspend|resume` — guarded pane actions
 cmd/fleet/inspect.go   # Shared by the agent-facing commands: state loading, rendering, JSON shape
 cmd/fleet/skill.go     # `fleet skill <install|uninstall|status>` — install the agent skill
+cmd/fleet/trust.go     # `fleet trust [path]` — allow a repo's `.fleet.json` workspace shell commands to run
 internal/ticket/       # Tracker-agnostic ticket layer: Provider interface, branch naming, seed prompt, image download, keychain store, ticket.md + meta.json, Materialize
 internal/linear/       # Linear provider — GraphQL client, API-key + PKCE OAuth
 internal/jira/         # Jira Cloud provider — REST v3 client, API-token Basic auth, ADF→markdown

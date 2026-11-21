@@ -1527,7 +1527,17 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.previewCacheTime[msg.sessionID] = time.Now()
 		return h, nil
 
+	case trustCommandsMsg:
+		h.trustCommands(msg.repoPath)
+		return h, nil
+
 	case workspaceListMsg:
+		if errors.Is(msg.err, workspace.ErrUntrustedCommands) {
+			h.worktreeDialog.Hide()
+			h.clearPendingFork()
+			h.askToTrustCommands(msg.repoPath)
+			return h, nil
+		}
 		if msg.err != nil {
 			h.worktreeDialog.Hide()
 			h.clearPendingFork()
@@ -4318,6 +4328,10 @@ func (h *Home) confirmDeleteHeader(item SidebarItem) tea.Cmd {
 	// Empty plain repo: instant unpin, no dialog (unchanged behavior).
 	if count == 0 && !isWorktree {
 		return h.unpinRepoHeader(repoPath)
+	}
+	if isWorktree && !workspace.CommandsTrusted(repoPath) {
+		h.askToTrustCommands(repoPath)
+		return nil
 	}
 
 	base := filepath.Base(repoPath)
@@ -7863,6 +7877,9 @@ func (h *Home) fetchBranchList(repoPath string) tea.Cmd {
 
 func (h *Home) fetchWorkspaceListForRepo(repoPath string) tea.Cmd {
 	return func() tea.Msg {
+		if !workspace.CommandsTrusted(repoPath) {
+			return workspaceListMsg{repoPath: repoPath, err: workspace.ErrUntrustedCommands}
+		}
 		provider := workspace.ResolveProvider(repoPath)
 		// For the built-in git provider, resolve to the main worktree: a new
 		// worktree is a sibling of the main repo, so its name must derive from the

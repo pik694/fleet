@@ -17,6 +17,8 @@ import { Callout } from "fumadocs-ui/components/callout";
 {
   // Custom workspace provider. If present, fleet uses ShellProvider
   // for this repo instead of the built-in git worktree provider.
+  // fleet refuses to run these until you trust them (a prompt in the TUI,
+  // or `fleet trust [path]`), and asks again whenever they change.
   "workspace": {
     "list": "my-tool list",
     "create": "my-tool create {{name}} {{branch}}",
