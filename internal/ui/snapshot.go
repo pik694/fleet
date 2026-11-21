@@ -35,21 +35,12 @@ type statusSnapshotMsg struct {
 	err  error
 }
 
-// reportSnapshotMsg delivers a capture taken for the bug-report dialog. It is a
-// distinct type from statusSnapshotMsg so the `D` key's handler (which only
-// toasts a path) can't be reached by a report capture, and vice versa.
-type reportSnapshotMsg struct{ snap snapshotResult }
-
-// snapshotResult is everything a capture produced: the in-memory payload the
-// bug-report dialog renders and files, plus the on-disk dir when one was
-// written. meta is the exact map snapshot.json holds — read named fields out of
-// it, never marshal it wholesale, since it embeds the user's verbatim prompt
-// under hook.file_contents.user_prompt.
+// snapshotResult is everything a capture produced: the in-memory payload plus
+// the on-disk dir when one was written. meta is the exact map snapshot.json
+// holds; it embeds the user's verbatim prompt under
+// hook.file_contents.user_prompt, so it stays on this machine.
 //
-// sessionID identifies which session this describes. The report dialog compares
-// it against the session it is showing before installing the capture: `!` on
-// session A, esc, then `!` on B would otherwise let A's slow capture land in B's
-// form and publish A's screen under B's heading, unpreviewed.
+// sessionID identifies which session this describes.
 type snapshotResult struct {
 	path      string
 	sessionID string
@@ -74,16 +65,10 @@ type workerHeartbeat struct {
 // captureStatusSnapshot gathers a session's status evidence and, when persist is
 // set, freezes it to a dir under ~/.config/fleet/snapshots/.
 //
-// persist separates the two callers. `Shift+D` is a deliberate "freeze this for
-// me to read later", so it writes the full dir. The report dialog is not: it
-// fires on every `!` press, before the user has even picked a report kind, and
-// would otherwise leave a dir behind for a cancelled dialog or a feature
-// request — including a `runtime.Stack(all=true)` dump, which walks every
-// goroutine, on a hot interactive key. It also breaks the invariant the
-// debug-status skill leans on, that the newest dir under snapshots/ is a
-// deliberate `D` capture. Nothing is lost: the issue body is built from the
-// returned values, never read back off disk, and the two files that exist only
-// on disk (pane_raw.txt, goroutines.txt) are never published anyway.
+// `Shift+D`, the only caller, is a deliberate "freeze this for me to read
+// later", so it persists the full dir — including a `runtime.Stack(all=true)`
+// dump, which walks every goroutine. With persist unset the capture stays in
+// memory and touches the filesystem nowhere.
 //
 // copyTranscript additionally gates the frozen copy of the Claude conversation
 // JSONL — 0.5–2.7 MB apiece. It is meaningful only when persist is set.

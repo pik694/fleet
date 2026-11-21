@@ -109,8 +109,7 @@ type Config struct {
 	// values are claudeaccount.Strategies, resolved by claudeaccount.ParseStrategy
 	// via GetAccountStrategy — deliberately not restated here, since a stale copy
 	// of that list in this package is exactly what made one mode unreachable.
-	// Accounts themselves live in accounts.json, not here — this file is
-	// published in bug reports.
+	// Accounts themselves live in accounts.json, not here.
 	AccountStrategy string `json:"account_strategy,omitempty"`
 	// DefaultAccount is the account email used under the "manual" strategy.
 	DefaultAccount string `json:"default_account,omitempty"`

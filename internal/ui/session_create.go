@@ -89,8 +89,7 @@ func (d *SessionCreateDialog) selectedAccount() (accountPickerRow, bool) {
 // submitBlocker names why ⏎ won't create right now, or "" when it will.
 //
 // One function, consulted by both the enter handler and the footer, so the key
-// can never act on a state the footer calls unready — the shape statusReportForm
-// uses, and for the same reason.
+// can never act on a state the footer calls unready.
 //
 // A cycler can only honour "a disabled option is shown with its reason" by
 // letting you land on one, so ⏎ has to refuse there. It is never blocked for a

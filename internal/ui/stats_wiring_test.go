@@ -184,7 +184,7 @@ func TestStatsActionTableEmitsOnlyEnums(t *testing.T) {
 	}
 	// Attaches, creates and deletes count from their own tables; the rest are
 	// logged before their guard runs and record where they succeed instead.
-	for _, action := range []string{"attach session", "attach via slot", "create session", "delete session", "command: stats", "open bug report",
+	for _, action := range []string{"attach session", "attach via slot", "create session", "delete session", "command: stats",
 		"quick approve", "mark unread", "open editor", "open PR", "copy PR link"} {
 		if got := statsActionFor(action); got != "" {
 			t.Errorf("statsActionFor(%q) = %q, want nothing", action, got)

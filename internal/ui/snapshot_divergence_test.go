@@ -106,14 +106,13 @@ func TestBuildSnapshotJSON_HookBlockMarshals(t *testing.T) {
 	}
 	hook := back["hook"].(map[string]any)
 
-	// metaInt must survive the float64 that json.Unmarshal produces.
-	if got := metaInt(hook, "owner_pid"); got != 4242 {
-		t.Errorf("owner_pid after round trip = %d, want 4242", got)
+	if got, _ := hook["owner_pid"].(float64); got != 4242 {
+		t.Errorf("owner_pid after round trip = %v, want 4242", got)
 	}
-	if got := metaString(hook, "file_session_id"); got != "new-bbb" {
+	if got, _ := hook["file_session_id"].(string); got != "new-bbb" {
 		t.Errorf("file_session_id after round trip = %q, want new-bbb", got)
 	}
-	if got := metaString(hook, "owner_session_id"); got != "owner-aaa" {
+	if got, _ := hook["owner_session_id"].(string); got != "owner-aaa" {
 		t.Errorf("owner_session_id after round trip = %q, want owner-aaa", got)
 	}
 }

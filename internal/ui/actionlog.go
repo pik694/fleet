@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// ActionEntry records a single user action for "steps to reproduce".
+// ActionEntry records a single user action.
 type ActionEntry struct {
 	Timestamp time.Time
 	Action    string // e.g. "open editor", "attach session"

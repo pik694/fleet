@@ -27,7 +27,6 @@ import (
 	"github.com/brizzai/fleet/internal/claudeaccount"
 	"github.com/brizzai/fleet/internal/config"
 	"github.com/brizzai/fleet/internal/debuglog"
-	"github.com/brizzai/fleet/internal/diagnostics"
 	"github.com/brizzai/fleet/internal/discovery"
 	"github.com/brizzai/fleet/internal/editor"
 	"github.com/brizzai/fleet/internal/frost"
@@ -546,10 +545,7 @@ type Home struct {
 	// doesn't shell out on the Bubble Tea Update() thread.
 	identity analytics.Identity
 
-	// Bug report / diagnostics.
-	errorHistory *ErrorHistory
-	actionLog    *ActionLog
-	bugReport    *BugReportDialog
+	actionLog *ActionLog
 
 	// Background worker for async status/git/PR updates.
 	statusTrigger         chan struct{} // buffered(1), triggers worker
@@ -612,7 +608,7 @@ type Home struct {
 	frost    *frost.Scene
 	keyTrail []string
 
-	// Rendering diagnostics (accumulated counters for bug reports).
+	// Rendering diagnostics (accumulated counters).
 	renderStats RenderStats
 }
 
@@ -668,7 +664,6 @@ func NewHome(storage *session.StateDB, cfg *config.Config, version string, ident
 		statsView:              NewStatsView(),
 		recapView:              NewRecapView(),
 		launchpad:              NewLaunchpad(),
-		bugReport:              NewBugReportDialog(),
 		previewCache:           make(map[string]string),
 		previewCacheTime:       make(map[string]time.Time),
 		repoLastHotAt:          make(map[string]time.Time),
@@ -676,7 +671,6 @@ func NewHome(storage *session.StateDB, cfg *config.Config, version string, ident
 		cfg:                    cfg,
 		version:                version,
 		identity:               identity,
-		errorHistory:           NewErrorHistory(50),
 		actionLog:              NewActionLog(100),
 		statusTrigger:          make(chan struct{}, 1),
 		gitTrigger:             make(chan struct{}, 1),
@@ -996,7 +990,6 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.connectJira.SetSize(msg.Width, msg.Height)
 		h.consentDialog.SetSize(msg.Width, msg.Height)
 		h.onboardingDialog.SetSize(msg.Width, msg.Height)
-		h.bugReport.SetSize(msg.Width, msg.Height)
 		h.releaseNotes.SetSize(msg.Width, msg.Height)
 		h.statsView.SetSize(msg.Width, msg.Height)
 		h.recapView.SetSize(msg.Width, msg.Height)
@@ -1605,32 +1598,6 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return h, h.ensureWhatsNewShimmer()
 
-	case bugReportClosedMsg:
-		// Closing here covers the submit path too: it files the issue from inside
-		// a tea.Cmd, which cannot reach the dialog, so without this the form sat
-		// on "Creating issue..." forever and had to be dismissed by hand (#233).
-		//
-		// Gated on submitting because the message carries no identity: esc during
-		// a submit hides the form and emits one, so pressing `!` again lands a
-		// fresh form that the still-pending gh result would otherwise close —
-		// taking the description typed into it. A form that isn't mid-submit is
-		// never the one this result belongs to.
-		if h.bugReport.submitting {
-			h.bugReport.Hide()
-		}
-		if msg.url != "" {
-			// The submit path also opens the URL in a browser, but that is only a
-			// logged warning when it fails — this line is the confirmation the
-			// user is guaranteed to get.
-			h.setInfo("Issue created: " + msg.url)
-		}
-		return h, nil
-
-	case bugReportOpenErrMsg:
-		h.bugReport.submitting = false
-		h.setError("bug_report_submit_failed", msg.err)
-		return h, nil
-
 	case openEditorMsg:
 		if msg.err != nil {
 			h.setError("editor_open_failed", fmt.Errorf("editor: %w", msg.err))
@@ -1701,24 +1668,6 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			h.setInfo("Snapshot saved: " + msg.path)
 		}
-		return h, nil
-
-	case reportSnapshotMsg:
-		// Silent on failure: the dialog renders the reason inline, and a toast
-		// behind a modal would only stack noise the reporter can't act on.
-		h.bugReport.SetSnapshot(msg.snap)
-		return h, nil
-
-	case statusMisdetectedMsg:
-		analytics.Track(analytics.EventStatusMisdetected, map[string]interface{}{
-			"shown":            msg.shown,
-			"expected":         msg.expected,
-			"agent":            msg.agent,
-			"hook_status":      msg.hookStatus,
-			"pane_detected":    msg.paneDetect,
-			"mismatch":         msg.mismatch,
-			"included_content": msg.wroteContent,
-		})
 		return h, nil
 
 	case previewMsg:
@@ -2634,7 +2583,6 @@ func (h *Home) modalOpen() bool {
 		h.releaseNotes.IsVisible() ||
 		h.statsView.IsVisible() ||
 		h.recapView.IsVisible() ||
-		h.bugReport.IsVisible() ||
 		h.settingsDialog.IsVisible() ||
 		h.createWorkspaceDialog.IsVisible() ||
 		h.worktreeDialog.IsVisible() ||
@@ -2686,9 +2634,6 @@ func (h *Home) renderBody() string {
 	if h.statsView.IsVisible() {
 		h.statsView.SetCovered(h.recapView.IsVisible())
 		return h.statsView.View()
-	}
-	if h.bugReport.IsVisible() {
-		return h.bugReport.View()
 	}
 	if h.settingsDialog.IsVisible() {
 		return h.settingsDialog.View()
@@ -2936,7 +2881,7 @@ func (h *Home) renderBody() string {
 		lineCount++
 	}
 
-	// Track height mismatches (counter for bug report, log only on first occurrence).
+	// Track height mismatches (log only on first occurrence).
 	// Uses incremental lineCount instead of re-scanning the output.
 	if h.height > 0 && lineCount != h.height {
 		diff := lineCount - h.height
@@ -3007,10 +2952,6 @@ func (h *Home) routeToModal(msg tea.Msg) (tea.Cmd, bool) {
 		if h.onboardingDialog.IsVisible() && h.onboardingDialog.ThemeCursor() != before {
 			h.trace(traceThemeCycle)
 		}
-		return cmd, true
-	case h.bugReport.IsVisible():
-		dialog, cmd := h.bugReport.Update(msg)
-		h.bugReport = dialog
 		return cmd, true
 	case h.settingsDialog.IsVisible():
 		dialog, cmd := h.settingsDialog.Update(cmdMsg)
@@ -3547,8 +3488,6 @@ func (h *Home) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "X":
 		h.dismissActiveTip()
 		return h, nil
-	case "!":
-		return h.openBugReport()
 	case "D":
 		s := h.selectedSession()
 		if s == nil {
@@ -9007,7 +8946,6 @@ func (h *Home) loadSessions() tea.Msg {
 		if _, err := hooks.InjectCopilotHooks(hooks.GetCopilotConfigDir()); err != nil {
 			debuglog.Logger.Error("copilot hook inject failed", "err", err)
 		}
-		go diagnostics.WarmCopilotVersion() // for bug reports; slow on first run
 	}
 	// Route tmux copy-mode selections to the system clipboard (pbcopy on
 	// macOS; wl-copy/xclip/xsel on Linux), so drag/click-to-copy works on
@@ -9051,8 +8989,8 @@ func (h *Home) loadSessions() tea.Msg {
 	}
 }
 
-// setError reports a real failure: an error toast, an errorHistory entry (which
-// bug reports carry) and an error_occurred tagged with category. Guidance such as
+// setError reports a real failure: an error toast and an error_occurred tagged
+// with category. Guidance such as
 // "no PR for this branch" is not a failure — it goes through setInfo, which does
 // none of those.
 //
@@ -9080,41 +9018,10 @@ func (h *Home) setError(category string, err error) {
 	h.errTime = time.Now()
 	if err != nil {
 		h.trace(traceToastError)
-		h.errorHistory.Add(err.Error())
 		h.toasts.Add(ToastError, err.Error())
 		analytics.Track(analytics.EventErrorOccurred, map[string]interface{}{
 			"category": category,
 		})
-	}
-}
-
-// openBugReport shows the report dialog and, when a session is under the
-// cursor, freezes its status evidence in the same breath.
-//
-// The capture fires at the keypress rather than at submit because status is a
-// moving target: by the time someone has typed a description, the session may
-// have self-corrected, and re-reading it then would capture a state nobody is
-// complaining about. The Cmd keeps the blocking tmux I/O off the Update loop,
-// the same way the `D` key's capture does.
-//
-// It captures in memory only (persist=false). This fires on every `!` press,
-// before a report kind is even chosen, so persisting would litter
-// ~/.config/fleet/snapshots/ with cancelled dialogs and feature requests — and
-// would put a full-process goroutine dump on a hot key. The filed issue is
-// unaffected: its body is built from the returned values, not read off disk.
-func (h *Home) openBugReport() (tea.Model, tea.Cmd) {
-	h.logAction("open bug report", "", true)
-	s := h.selectedSession()
-	h.bugReport.Show(h.version, len(h.sessions), h.errorHistory, h.actionLog,
-		h.width, h.height, &h.renderStats, time.Since(h.startTime), s)
-	analytics.Track(analytics.EventBugReportOpened, nil)
-
-	if s == nil {
-		return h, nil
-	}
-	hb := h.workerHeartbeat()
-	return h, func() tea.Msg {
-		return reportSnapshotMsg{snap: captureStatusSnapshot(s, s.ID, hb, false, false)}
 	}
 }
 
@@ -9527,7 +9434,6 @@ func (h *Home) buildPaletteItems() []PaletteItem {
 		{Kind: PaletteKindCommand, ID: "branch", Name: "Switch Branch", Shortcut: "b"},
 		{Kind: PaletteKindCommand, ID: "filter", Name: "Filter Sessions", Shortcut: "/"},
 		{Kind: PaletteKindCommand, ID: "settings", Name: "Settings", Shortcut: "S"},
-		{Kind: PaletteKindCommand, ID: "bug_report", Name: "Bug Report", Shortcut: "!"},
 		{Kind: PaletteKindCommand, ID: "help", Name: "Help", Shortcut: "?"},
 		{Kind: PaletteKindCommand, ID: "whats_new", Name: "What's New", Shortcut: "Shift+W"},
 		{Kind: PaletteKindCommand, ID: "release_notes", Name: "Release Notes"},
@@ -9833,8 +9739,6 @@ func (h *Home) dispatchCommand(id string) (tea.Model, tea.Cmd) {
 		h.settingsDialog.Show()
 		analytics.Track(analytics.EventSettingsOpened, nil)
 		return h, nil
-	case "bug_report":
-		return h.openBugReport()
 	case "help":
 		h.helpOverlay.Show()
 		h.recordStats(stats.ActionHelpOpen)

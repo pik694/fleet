@@ -738,7 +738,7 @@ func TestRetiredPIDIsHonouredOnlyBriefly(t *testing.T) {
 	}
 }
 
-// The `!` report shows what the pane says; for Copilot that must be Copilot's
+// A status snapshot shows what the pane says; for Copilot that must be Copilot's
 // own reading, not Claude's detector run over Copilot's screen.
 func TestReportPaneStatusUsesCopilotsDetector(t *testing.T) {
 	cases := map[string]Status{"working": StatusRunning, "permission": StatusWaiting, "idle": ""}

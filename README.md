@@ -143,7 +143,6 @@ Sessions live under their repo. Branch name, dirty state, and full PR status on 
 - **Auto-naming** — sessions title themselves from your prompt
 - **6 themes** — fleet-pink (default), tokyo-night, catppuccin-mocha, rose-pine, nord, gruvbox (**`S`** to switch)
 - **Chrome tab control** — **`p`** opens PR in Chrome, reuses existing tab
-- **Bug reports** — **`!`** captures diagnostics and opens a pre-filled GitHub issue
 
 ## Why fleet?
 
@@ -197,7 +196,6 @@ If you drive Claude Code, Codex, OpenCode, or Copilot and want the tightest inte
 | `` ` `` | Toggle terminal drawer |
 | `Ctrl+K` | Command palette |
 | `S` | Settings |
-| `!` | Bug report / diagnostics |
 | `?` | Help |
 | `Ctrl+C` | Quit |
 

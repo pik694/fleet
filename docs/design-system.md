@@ -82,7 +82,7 @@ Ask which one moves the keyboard. That is the whole test.
 
 | tier | use when | how |
 |---|---|---|
-| **full-screen** | the task owns the user's attention for more than a moment, or needs the whole viewport: settings, help, release notes, bug report, onboarding, consent | `renderBody` returns the dialog's `View()` outright |
+| **full-screen** | the task owns the user's attention for more than a moment, or needs the whole viewport: settings, help, release notes, onboarding, consent | `renderBody` returns the dialog's `View()` outright |
 | **centered overlay** | a focused task the surrounding context still explains: the command palette | `dimBackdrop(base)` then `overlayAt` at center |
 | **row-anchored dropdown** | the action belongs to one visible row and must stay attached to it: context menu, snooze, account picker, allowed accounts | `overlayAt` at the row, **no `dimBackdrop`** |
 

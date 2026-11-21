@@ -525,8 +525,6 @@ func (h *Home) traceDialogName() string {
 		return ""
 	case h.onboardingDialog.IsVisible():
 		return ""
-	case h.bugReport.IsVisible():
-		return "report"
 	case h.settingsDialog.IsVisible():
 		return "settings"
 	case h.createWorkspaceDialog.IsVisible():

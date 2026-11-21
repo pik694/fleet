@@ -1053,8 +1053,8 @@ func (s *Session) negCacheRotation(owner, foreign string, foreignPID int) {
 	// repeat it; starting the interval here makes the throttled line a pure
 	// still-happening heartbeat. Per entry rather than per session, so an id rejected
 	// moments after another can't inherit the previous one's spent interval — that
-	// silence would land squarely in the window where a user hits `!` and files a
-	// report. The recovery clock starts here for the same reason plus one of its own:
+	// silence would land squarely in the window where someone reads the log to
+	// diagnose it. The recovery clock starts here for the same reason plus one of its own:
 	// an id rejected this instant cannot yet show an abandoned owner.
 	s.rotRejects[foreign] = &rotReject{owner: owner, foreignPID: foreignPID, loggedAt: now, checkedAt: now}
 	s.rotUndecidedOwner = ""

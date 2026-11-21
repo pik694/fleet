@@ -88,11 +88,6 @@ escalates the level on its own; it only upgrades a PSI *warning* to critical
 as unknown, and kernels without PSI report unknown pressure — in both cases
 no session is ever auto-suspended.
 
-## Diagnostics / bug reports
-
-On Linux, reports carry `PRETTY_NAME` from `/etc/os-release` plus
-`uname -r` where macOS reports `sw_vers`.
-
 ## Packaging
 
 - `Dockerfile` — golang:1.26 build stage → ubuntu:24.04 runtime with tmux,
