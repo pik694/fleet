@@ -9,7 +9,6 @@ build:
 
 # Build then exec (not `go run`): fleet writes its own path into Claude's
 # hooks, and go run deletes its binary on exit, leaving them dangling.
-# version=dev keeps the auto-updater from swapping in the released binary.
 run:
 	go build -ldflags "-X main.version=dev" -o $(BUILD_DIR)/$(BINARY) ./cmd/fleet
 	FLEET_DEBUG=$${FLEET_DEBUG:-1} ./$(BUILD_DIR)/$(BINARY)
@@ -27,7 +26,7 @@ fmt:
 lint:
 	golangci-lint run ./...
 
-COVERAGE_EXCLUDE := /(ui|cmd|chrome|debuglog|diagnostics|update)/
+COVERAGE_EXCLUDE := /(ui|cmd|chrome|debuglog|diagnostics)/
 
 coverage:
 	go test -race -coverprofile=coverage.out -covermode=atomic ./...

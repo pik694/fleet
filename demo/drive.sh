@@ -65,7 +65,6 @@ fleet_env() {
     echo "-e COPILOT_HOME=$SANDBOX/.copilot"
     echo "-e PATH=$SANDBOX/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     echo "-e FLEET_DEMO_PREFIX=$REPOS"
-    echo "-e FLEET_AUTO_UPDATE_DISABLED=1"
     echo "-e FLEET_TELEMETRY_DISABLED=1"
     echo "-e DO_NOT_TRACK=1"
     echo "-e FLEET_FREEZE_ANIM=1"
@@ -111,10 +110,7 @@ require_up() {
     fi
 }
 
-# Helper: build only when needed. version=dev is a second lock on the
-# auto-updater beside FLEET_AUTO_UPDATE_DISABLED — `make build` stamps a real
-# `git describe` version, and a hit there replaces the binary and re-execs
-# itself out from under the change being tested.
+# Helper: build only when needed.
 ensure_build() {
     if [ ! -x "$FLEET" ] || [ -n "$(find cmd internal -name '*.go' -newer "$FLEET" -print -quit 2>/dev/null)" ]; then
         echo "  Building (version=dev)..."
@@ -155,7 +151,6 @@ ensure_sandbox() {
   "display_onboarding_seen": true,
   "telemetry_mode": "off",
   "release_notes_seen_version": "9999.0.0",
-  "auto_update": false,
   "auto_name_sessions": false,
   "tick_interval_sec": 2,
   "session_suspend_mode": "off",

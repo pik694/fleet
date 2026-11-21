@@ -42,7 +42,7 @@ type Release struct {
 	URL        string    `json:"url"` // html_url
 }
 
-// configDir returns ~/.config/fleet/, matching internal/update and the rest of fleet.
+// configDir returns ~/.config/fleet/, matching the rest of fleet.
 func configDir() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "fleet")

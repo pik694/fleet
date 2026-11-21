@@ -1,14 +1,12 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
-	"syscall"
 	"text/tabwriter"
 
 	tea "charm.land/bubbletea/v2"
@@ -21,7 +19,6 @@ import (
 	"github.com/brizzai/fleet/internal/termkeys"
 	"github.com/brizzai/fleet/internal/tmux"
 	"github.com/brizzai/fleet/internal/ui"
-	"github.com/brizzai/fleet/internal/update"
 )
 
 // version is set via -ldflags at build time. GoReleaser populates this automatically.
@@ -80,8 +77,6 @@ func main() {
 		handleChromeHost()
 	case "hooks":
 		handleHooksCmd(args[1:])
-	case "update":
-		runUpdate()
 	case "version", "--version", "-v":
 		fmt.Printf("fleet %s\n", version)
 	case "help", "--help", "-h":
@@ -126,45 +121,6 @@ func runTUI() {
 	// consent prompt is answered. We still defer Shutdown unconditionally
 	// because Shutdown is a no-op when Init was never called.
 	defer analytics.Shutdown()
-
-	// Auto-update: check for newer version on launch.
-	if cfg.IsAutoUpdateEnabled() && version != "dev" && update.ShouldCheck() {
-		debuglog.Logger.Info("checking for updates", "current", version)
-		newVer, err := update.Update(version)
-		// A package-managed install can never swap its own binary. That's a
-		// permanent property of how fleet was installed, not a failure, so it
-		// is not counted as an update error — otherwise every packaged Linux
-		// install reports a broken updater once an hour, forever.
-		skipped := errors.Is(err, update.ErrNotReplaceable)
-		// Record update health for analytics. The updater runs before
-		// analytics.Init (which waits on the consent prompt inside the TUI) and
-		// re-execs on a successful update, so these events can't be sent now —
-		// QueuePending parks them for FlushPending to emit after Init.
-		if cfg.GetTelemetryMode() != config.TelemetryOff && !analytics.IsOptedOutByEnv() {
-			analytics.QueuePending(analytics.EventUpdateCheck, map[string]any{
-				"updated": err == nil && newVer != "",
-				"error":   err != nil && !skipped,
-			})
-			if err == nil && newVer != "" {
-				analytics.QueuePending(analytics.EventUpdateApplied, map[string]any{
-					"from": version,
-					"to":   newVer,
-				})
-			}
-		}
-		if skipped {
-			debuglog.Logger.Info("auto-update skipped", "reason", err)
-		} else if err != nil {
-			debuglog.Logger.Error("auto-update failed", "err", err)
-		} else if newVer != "" {
-			debuglog.Logger.Info("auto-updated", "from", version, "to", newVer)
-			fmt.Printf("Updated fleet to %s, restarting...\n", newVer)
-			exe, _ := os.Executable()
-			syscall.Exec(exe, os.Args, os.Environ())
-		} else {
-			debuglog.Logger.Info("already up to date", "version", version)
-		}
-	}
 
 	storage, err := session.Open(session.DefaultDBPath())
 	if err != nil {
@@ -317,21 +273,6 @@ func runRemove(selector string) {
 	fmt.Printf("Removed session '%s' (%s)\n", match.Title, match.ID)
 }
 
-func runUpdate() {
-	fmt.Printf("fleet %s\n", version)
-	fmt.Println("Checking for updates...")
-	newVer, err := update.Update(version)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
-		os.Exit(1)
-	}
-	if newVer == "" {
-		fmt.Println("Already up to date.")
-	} else {
-		fmt.Printf("Updated to %s\n", newVer)
-	}
-}
-
 func printUsage() {
 	fmt.Printf("fleet %s - manage Claude Code, Codex, OpenCode and Copilot sessions\n", version)
 	fmt.Println(`
@@ -368,7 +309,6 @@ Watch and drive sessions (one-shot, never the TUI; --help on each):
                            reading this: run 'fleet skill install' yourself, it
                            never prompts.
   fleet hooks <install|uninstall|status>  Manage Claude Code and Copilot hooks
-  fleet update       Update to latest version
   fleet version      Show version
   fleet help         Show this help`)
 }

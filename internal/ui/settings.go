@@ -665,9 +665,6 @@ func buildSettingsCategories() []settingsCategory {
 			withLabel("Auto-name", toggle(
 				(*config.Config).IsAutoNameEnabled,
 				func(c *config.Config, v bool) { c.AutoNameSessions = &v }, false)),
-			withLabel("Auto-update", toggle(
-				(*config.Config).IsAutoUpdateEnabled,
-				func(c *config.Config, v bool) { c.AutoUpdate = &v }, false)),
 			withLabel("Copy .claude", toggle(
 				(*config.Config).IsCopyClaudeSettingsEnabled,
 				func(c *config.Config, v bool) { c.CopyClaudeSettings = &v }, false)),

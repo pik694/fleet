@@ -66,8 +66,7 @@ func (h *Home) collectSnapshot() analytics.SnapshotStats {
 func (h *Home) fireStartupAnalytics(repoCount int) {
 	mode := h.cfg.GetTelemetryMode()
 	analytics.Init(mode, h.version, h.identity)
-	// Drain any events parked before the client existed — e.g. update_check /
-	// update_applied queued by the pre-Init auto-updater in main.go.
+	// Drain any events parked before the client existed.
 	analytics.FlushPending()
 
 	effectiveTheme := h.cfg.Theme

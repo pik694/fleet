@@ -104,10 +104,6 @@ On Linux, reports carry `PRETTY_NAME` from `/etc/os-release` plus
 - `contrib/systemd/fleet-tmux.service` — optional user unit starting the
   tmux server at login; see comments in the unit for `loginctl
   enable-linger`.
-- Package installs land the binary in `/usr/bin`, which an unprivileged
-  user can't replace — the auto-updater probes this *before* downloading
-  and skips with a hint in `debug.log` (once per hourly check, not per
-  launch). Update via `apt`/`dnf`, or turn auto-update off in Settings.
 
 ## Known limits on Linux
 

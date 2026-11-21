@@ -61,7 +61,6 @@ type Config struct {
 	Editor               string `json:"editor,omitempty"`
 	Theme                string `json:"theme,omitempty"`
 	AutoNameSessions     *bool  `json:"auto_name_sessions,omitempty"`
-	AutoUpdate           *bool  `json:"auto_update,omitempty"`
 	CopyClaudeSettings   *bool  `json:"copy_claude_settings,omitempty"`
 	ConfirmBeforeRestart *bool  `json:"confirm_before_restart,omitempty"`
 	// OriginDeleteRemovesWorktrees controls what forgetting a whole origin row
@@ -333,30 +332,6 @@ func (c *Config) IsAutoNameEnabled() bool {
 		return true
 	}
 	return *c.AutoNameSessions
-}
-
-// IsAutoUpdateEnabled returns whether auto-update is enabled (default: true).
-// FLEET_AUTO_UPDATE_DISABLED takes precedence over the config file when truthy
-// (1/true/yes/y/on) — useful for running a local dev build without the
-// auto-updater overwriting it with the latest release.
-func (c *Config) IsAutoUpdateEnabled() bool {
-	if isTruthyEnv(os.Getenv("FLEET_AUTO_UPDATE_DISABLED")) {
-		return false
-	}
-	if c.AutoUpdate == nil {
-		return true
-	}
-	return *c.AutoUpdate
-}
-
-// isTruthyEnv returns true for common truthy values (1, true, yes, y, on).
-func isTruthyEnv(v string) bool {
-	switch strings.TrimSpace(strings.ToLower(v)) {
-	case "1", "true", "yes", "y", "on":
-		return true
-	default:
-		return false
-	}
 }
 
 // DefaultConfigPath returns the default config file path.
